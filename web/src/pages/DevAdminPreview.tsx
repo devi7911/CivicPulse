@@ -8,7 +8,7 @@ import type { Overview } from '../components/AdminOverview';
 // limited to the fictional seed accounts, so the layout can be reviewed before an admin account exists.
 // It never calls the admin-only database functions.
 const OVERVIEW: Overview = {
-  ads: 0, flags: 0, verify: 2, overdue: 2, due_soon: 0, reopened: 0, petitions: 0, sightings: 0, errors_24h: 0, signups_7d: 1,
+  ads: 0, flags: 0, verify: 2, overdue: 2, due_soon: 0, reopened: 0, petitions: 0, support_open: 0, sightings: 0, errors_24h: 0, signups_7d: 1,
   unassigned: 3, unpaid_ads: 0, open_issues: 6, reports_24h: 11, resolved_7d: 4, child_expiring: 0, routes_without_stops: 0,
   claimed_now: 0, pending_count: 3, progress_count: 3, oldest_open_days: 1, activity: [],
 };

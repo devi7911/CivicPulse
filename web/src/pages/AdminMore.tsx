@@ -6,7 +6,7 @@ import { HideToggle } from '../components/Moderation';
 import { useActiveAlerts } from '../components/CityAlerts';
 import { ISSUE_CATEGORIES, timeAgo } from '../lib/constants';
 import { supabase } from '../lib/supabase';
-import type { IssueCategory } from '../lib/types';
+import type { IssueCategory, SupportStatus } from '../lib/types';
 import { DECISION_LABEL, useProposals } from './Petitions';
 import { CAMPAIGN_STATUS, liveState, totals, type Campaign, type DayStat } from './Advertise';
 import { SponsoredBanner } from '../components/FeedCards';
@@ -878,6 +878,117 @@ export function RepliesAdmin() {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/* ---------------- Support (Help & feedback replies) ---------------- */
+interface SupportRow { id: string; subject: string; status: SupportStatus; created_at: string; updated_at: string; author: { display_name: string } | null }
+
+export function SupportAdmin() {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState<'open' | 'answered' | 'closed' | 'all'>('open');
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const list = useQuery({
+    queryKey: ['admin-support', filter],
+    queryFn: async () => {
+      let q = supabase.from('support_requests').select('id, subject, status, created_at, updated_at, author:profiles!support_requests_author_id_fkey(display_name)')
+        .order('updated_at', { ascending: false }).limit(200);
+      if (filter !== 'all') q = q.eq('status', filter);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return data as unknown as SupportRow[];
+    },
+  });
+
+  if (openId) return <SupportThread id={openId} onBack={() => { setOpenId(null); qc.invalidateQueries({ queryKey: ['admin-support'] }); }} />;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter">
+        {(['open', 'answered', 'closed', 'all'] as const).map((f) => (
+          <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={`chip ${filter === f ? 'chip-on' : ''}`}>{f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1)}</button>
+        ))}
+      </div>
+      {list.isLoading && <p className="text-sm text-muted">Loading…</p>}
+      {!list.isLoading && (list.data?.length ?? 0) === 0 && <p className="card px-6 py-10 text-center text-sm text-muted">Nothing here.</p>}
+      <ul className="grid gap-2 lg:grid-cols-2">
+        {(list.data ?? []).map((r) => (
+          <li key={r.id}>
+            <button type="button" onClick={() => setOpenId(r.id)} className="card-flat flex w-full items-center justify-between gap-2 p-3 text-start hover:border-primary">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold">{r.subject}</span>
+                <span className="text-xs text-muted">{r.author?.display_name ?? 'Unknown'} · {timeAgo(r.updated_at)}</span>
+              </span>
+              <span className={`shrink-0 ${r.status === 'open' ? 'status status-pending' : r.status === 'answered' ? 'status status-progress' : 'status status-closed'}`}>{r.status}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function SupportThread({ id, onBack }: { id: string; onBack: () => void }) {
+  const qc = useQueryClient();
+  const [body, setBody] = useState('');
+  const [msg, setMsg] = useState<Msg>(null);
+
+  const request = useQuery({
+    queryKey: ['admin-support-request', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('support_requests').select('id, subject, status, created_at, updated_at, author:profiles!support_requests_author_id_fkey(display_name)').eq('id', id).single();
+      if (error) throw new Error(error.message);
+      return data as unknown as SupportRow;
+    },
+  });
+  const messages = useQuery({
+    queryKey: ['admin-support-messages', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('support_messages').select('id, request_id, author_id, is_staff, body, created_at').eq('request_id', id).order('created_at');
+      if (error) throw new Error(error.message);
+      return data as { id: string; request_id: string; author_id: string; is_staff: boolean; body: string; created_at: string }[];
+    },
+  });
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['admin-support-messages', id] }); qc.invalidateQueries({ queryKey: ['admin-support-request', id] }); };
+
+  const reply = useMutation({
+    mutationFn: async () => { const { error } = await supabase.rpc('reply_support_request', { p_request: id, p_body: body.trim() }); if (error) throw new Error(error.message); },
+    onSuccess: () => { setBody(''); setMsg(null); refresh(); },
+    onError: (e: Error) => setMsg({ ok: false, text: e.message }),
+  });
+  const setStatus = useMutation({
+    mutationFn: async (status: SupportStatus) => { const { error } = await supabase.rpc('set_support_status', { p_request: id, p_status: status }); if (error) throw new Error(error.message); },
+    onSuccess: () => refresh(),
+    onError: (e: Error) => setMsg({ ok: false, text: e.message }),
+  });
+
+  return (
+    <section className="mx-auto max-w-xl space-y-3">
+      <button type="button" onClick={onBack} className="text-sm font-semibold text-primary hover:underline">← Back to all messages</button>
+      {request.data && (
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0"><h2 className="truncate text-base font-bold">{request.data.subject}</h2><p className="text-xs text-muted">from {request.data.author?.display_name ?? 'Unknown'}</p></div>
+          {request.data.status !== 'closed'
+            ? <button type="button" className="btn btn-ghost shrink-0" disabled={setStatus.isPending} onClick={() => setStatus.mutate('closed')}>Close</button>
+            : <button type="button" className="btn btn-ghost shrink-0" disabled={setStatus.isPending} onClick={() => setStatus.mutate('open')}>Reopen</button>}
+        </div>
+      )}
+      <ul className="space-y-2">
+        {(messages.data ?? []).map((m) => (
+          <li key={m.id} className={`card-flat max-w-[85%] p-3 text-sm ${m.is_staff ? 'ms-auto bg-primary-soft' : ''}`}>
+            {m.is_staff && <p className="mb-1 text-[11px] font-bold text-primary">You (staff)</p>}
+            <p className="whitespace-pre-wrap">{m.body}</p>
+            <p className="mt-1 text-[11px] text-muted">{timeAgo(m.created_at)}</p>
+          </li>
+        ))}
+      </ul>
+      <form onSubmit={(e) => { e.preventDefault(); if (body.trim()) reply.mutate(); }} className="space-y-2">
+        <textarea className="input" rows={3} maxLength={2000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Reply to this person…" aria-label="Reply" />
+        <Notice msg={msg} />
+        <button type="submit" className="btn btn-primary w-full" disabled={!body.trim() || reply.isPending}>{reply.isPending ? 'Sending…' : 'Send reply'}</button>
+      </form>
     </section>
   );
 }

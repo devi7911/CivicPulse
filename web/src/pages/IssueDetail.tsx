@@ -29,9 +29,9 @@ export function IssueDetail() {
   const [editing, setEditing] = useState<{ title: string; description: string; location_text: string } | null>(null);
   const [editComment, setEditComment] = useState<{ id: string; body: string } | null>(null);
   const navigate = useNavigate();
-  const reportState = location.state as { justReported?: boolean; tracked?: boolean } | null;
+  const reportState = location.state as { justReported?: boolean; followUp?: 'account' | 'device' | 'email' | 'none' } | null;
   const justReported = Boolean(reportState?.justReported);
-  const tracked = reportState?.tracked !== false;
+  const followUp = reportState?.followUp ?? 'account';
   // Guests can report and track their own reports; everything else needs an account.
   const canInteract = Boolean(userId) && !isGuest;
   const toAuth = () => navigate('/auth', { state: { from: location.pathname } });
@@ -240,12 +240,16 @@ export function IssueDetail() {
         {justReported && (
           <div role="status" className="rounded-xl border border-leaf/30 bg-[#e7f6ec] p-3 text-sm">
             <p className="font-bold text-leaf">Report submitted. Your reference number is {it.ref_no}.</p>
-            {tracked ? (
-              <p className="mt-0.5 text-xs text-muted">You will get updates in the bell whenever it changes, and can confirm the fix here. CivicPulse is not an official GHMC channel.</p>
-            ) : (
+            {followUp === 'email' ? (
+              <p className="mt-0.5 text-xs text-muted">We will email you whenever it changes, wherever you check your inbox. CivicPulse is not an official GHMC channel.</p>
+            ) : followUp === 'none' ? (
               <p className="mt-0.5 text-xs text-muted">You chose not to track it, so note the reference number. You can find the report any time by searching for it on the home page. CivicPulse is not an official GHMC channel.</p>
+            ) : (
+              <p className="mt-0.5 text-xs text-muted">You will get updates in the bell whenever it changes, and can confirm the fix here. CivicPulse is not an official GHMC channel.</p>
             )}
-            {isGuest && <p className="mt-1.5 text-xs">You are tracking this on this device only. <Link to="/auth" className="font-bold text-primary underline">Create an account</Link> to track it anywhere, and to back, comment on or follow other reports.</p>}
+            {followUp === 'device' && (
+              <p className="mt-1.5 text-xs">You are tracking this on this device only. <Link to="/auth" className="font-bold text-primary underline">Create an account</Link> to track it anywhere, and to back, comment on or follow other reports.</p>
+            )}
           </div>
         )}
 

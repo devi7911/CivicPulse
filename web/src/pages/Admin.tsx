@@ -1,13 +1,13 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { BADGE, useAdminOverview } from '../components/AdminOverview';
 import { AdminDashboard } from '../components/AdminDashboard';
 import { StaffReports } from '../components/StaffReports';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Lock, Pencil, Trash2 } from 'lucide-react';
+import { Eye, Lock, Pencil, Sparkles, Trash2 } from 'lucide-react';
 import { DOC_TYPES } from '../components/VerifyFlow';
 import { useAuth } from '../hooks/useAuth';
-import { ActivityAdmin, AdsAdmin, AlertsAdmin, BusRoutesAdmin, ChildAlertsAdmin, ErrorsAdmin, InsightsAdmin, MissionsAdmin, ModerationAdmin, PeopleAdmin, PetitionsAdmin, RepliesAdmin } from './AdminMore';
+import { ActivityAdmin, AdsAdmin, AlertsAdmin, BusRoutesAdmin, ChildAlertsAdmin, ErrorsAdmin, InsightsAdmin, MissionsAdmin, ModerationAdmin, PeopleAdmin, PetitionsAdmin, RepliesAdmin, SupportAdmin } from './AdminMore';
 import { CLOSED_REASONS, EVENT_CATEGORIES, ISSUE_CATEGORIES, ISSUE_COLS, STATUS_CLASS, STATUS_LABEL, formatDate, formatEventTime, isOverdue, timeAgo } from '../lib/constants';
 import { signedDocUrl, supabase, uploadAdMedia, uploadPhoto } from '../lib/supabase';
 import type { CityEvent, ClosedReason, EventCategory, Helpline, Issue, IssueStatus, UtilityLink } from '../lib/types';
@@ -17,7 +17,7 @@ import { friendlyError } from '../lib/friendlyError';
 const toLocalInput = (iso: string) => { const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 
 const GROUPS = [
-  { label: 'Work', tabs: ['issues', 'reports', 'verify', 'moderation', 'replies'] },
+  { label: 'Work', tabs: ['issues', 'reports', 'support', 'verify', 'moderation', 'replies'] },
   { label: 'Safety', tabs: ['child', 'alerts'] },
   { label: 'Content', tabs: ['events', 'directory', 'ngos', 'missions', 'buses', 'petitions'] },
   { label: 'Money', tabs: ['ads'] },
@@ -25,7 +25,7 @@ const GROUPS = [
 ] as const;
 type Tab = 'overview' | (typeof GROUPS)[number]['tabs'][number];
 const TAB_LABEL: Record<Tab, string> = {
-  overview: 'Dashboard', issues: 'Tickets', reports: 'Reports', child: 'Missing child', buses: 'Bus routes', moderation: 'Moderation', ads: 'Ad review', insights: 'Insights', alerts: 'City alerts', petitions: 'Petitions', missions: 'Missions',
+  overview: 'Dashboard', issues: 'Tickets', reports: 'Reports', support: 'Support', child: 'Missing child', buses: 'Bus routes', moderation: 'Moderation', ads: 'Ad review', insights: 'Insights', alerts: 'City alerts', petitions: 'Petitions', missions: 'Missions',
   replies: 'Standard replies', people: 'People', activity: 'Activity', errors: 'App errors', events: 'Events', ngos: 'NGOs', directory: 'Directory', verify: 'Verify',
 };
 const isTab = (v: string | null): v is Tab => Boolean(v && v in TAB_LABEL);
@@ -72,6 +72,7 @@ export function Admin() {
       {tab === 'overview' && <AdminDashboard onOpen={setTab} />}
       {tab === 'issues' && <IssueQueue userId={userId} />}
       {tab === 'reports' && <StaffReports me={userId} />}
+      {tab === 'support' && <SupportAdmin />}
       {tab === 'moderation' && <ModerationAdmin />}
       {tab === 'ads' && <AdsAdmin />}
       {tab === 'child' && <ChildAlertsAdmin />}
@@ -224,6 +225,7 @@ function QueueCard({ it, me, claim, busy, onUpdate, onClaim, onMerge }: {
   const mine = claim?.admin_id === me;
   const lockedBy = claim && !mine ? (claim.admin?.display_name ?? 'Another admin') : null;
   const [origRef, setOrigRef] = useState('');
+  const deptInputRef = useRef<HTMLInputElement>(null);
   const [target, setTarget] = useState(it.target_date ?? plusDays(7));
   // Contact details are encrypted; they are decrypted only on request, and each request is audited.
   const [contact, setContact] = useState<ReporterContact | null | undefined>(undefined);
@@ -285,8 +287,12 @@ function QueueCard({ it, me, claim, busy, onUpdate, onClaim, onMerge }: {
 
       <div>
         <label className="label" htmlFor={`as-${it.id}`}>Assigned department</label>
-        <input id={`as-${it.id}`} className="input" maxLength={60} list="departments" defaultValue={it.assignee ?? ''} placeholder="Choose or type a department"
+        <input id={`as-${it.id}`} ref={deptInputRef} className="input" maxLength={60} list="departments" defaultValue={it.assignee ?? ''} placeholder="Choose or type a department"
           onBlur={(e) => { if (e.target.value.trim() !== (it.assignee ?? '')) onUpdate({ assignee: e.target.value.trim() }); }} />
+        {!it.assignee && (
+          <AiSuggestDept issueId={it.id}
+            onUse={(dept) => { if (deptInputRef.current) deptInputRef.current.value = dept; onUpdate({ assignee: dept }); }} />
+        )}
       </div>
 
       <div>
@@ -342,6 +348,48 @@ function QueueCard({ it, me, claim, busy, onUpdate, onClaim, onMerge }: {
       )}
       </fieldset>
     </div>
+  );
+}
+
+// Suggests a department from the report's own text, using the free-tier Gemini model. The model
+// never assigns anything itself — the admin still has to press "Use this".
+type AiSuggestion = { department: string; confidence?: string; reason?: string; cached?: boolean };
+function AiSuggestDept({ issueId, onUse }: { issueId: string; onUse: (dept: string) => void }) {
+  const [state, setState] = useState<AiSuggestion | { error: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function suggest() {
+    setLoading(true);
+    setState(null);
+    const { data, error } = await supabase.rpc('admin_suggest_department', { p_issue: issueId, p_departments: DEPARTMENTS });
+    setLoading(false);
+    if (error) { setState({ error: friendlyError(error.message) }); return; }
+    const r = data as { ok: boolean; department?: string; confidence?: string; reason?: string; cached?: boolean; error?: string };
+    setState(r.ok ? { department: r.department!, confidence: r.confidence, reason: r.reason, cached: r.cached } : { error: r.error ?? 'Could not get a suggestion.' });
+  }
+
+  if (!state) {
+    return (
+      <button type="button" className="mt-1.5 inline-flex min-h-8 items-center gap-1.5 text-xs font-semibold text-primary underline disabled:opacity-60" disabled={loading} onClick={suggest}>
+        <Sparkles size={13} /> {loading ? 'Asking the AI…' : 'Suggest department (AI)'}
+      </button>
+    );
+  }
+  if ('error' in state) {
+    return (
+      <p className="mt-1.5 flex items-center gap-2 text-xs text-brick">
+        {state.error}
+        <button type="button" className="font-semibold underline" onClick={suggest}>Try again</button>
+      </p>
+    );
+  }
+  return (
+    <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+      <Sparkles size={13} className="shrink-0 text-primary" aria-hidden />
+      <span>AI suggests <b>{state.department}</b>{state.confidence && state.confidence !== 'high' ? ` (${state.confidence} confidence)` : ''}:</span>
+      <button type="button" className="font-semibold text-primary underline" onClick={() => onUse(state.department)}>Use this</button>
+      {state.reason && <span className="block w-full text-[11px] text-muted">{state.reason}</span>}
+    </p>
   );
 }
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Captcha, captchaEnabled } from '../components/Captcha';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowBigUp, BellRing, Camera, EyeOff, Globe, Lock, MapPinned, ScanFace, Trash2, UserRound, Video, WifiOff } from 'lucide-react';
+import { ArrowBigUp, BellRing, Camera, EyeOff, Globe, Lock, MapPinned, ScanFace, Sparkles, Trash2, UserRound, Video, WifiOff } from 'lucide-react';
 import { LocationPicker } from '../components/IssueMap';
 import { PhotoEditor } from '../components/PhotoEditor';
 import { useAuth } from '../hooks/useAuth';
@@ -12,7 +12,7 @@ import { ISSUE_CATEGORIES, QUICK_DETAILS, STATUS_LABEL } from '../lib/constants'
 import { isOffline, queueReport } from '../lib/offline';
 import { DuplicateReportError, submitReport } from '../lib/report';
 import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS, VIDEO_TYPES, videoDuration } from '../lib/geo';
-import { supabase } from '../lib/supabase';
+import { ensureSignedIn, supabase } from '../lib/supabase';
 import type { IssueCategory, NearbyIssue } from '../lib/types';
 import { friendlyError } from '../lib/friendlyError';
 import { validIndianMobile } from '../lib/accounts';
@@ -45,6 +45,20 @@ function deviceId(): string | null {
 
 function loadDetails(): GuestDetails {
   try { return { name: '', email: '', phone: '', ...JSON.parse(localStorage.getItem(DETAILS_KEY) ?? '{}') }; } catch { return { name: '', email: '', phone: '' }; }
+}
+
+// A small, low-quality copy of a photo, just for the AI suggestion request — keeps the upload
+// fast and the request well under the size the server accepts.
+async function downscaleForAI(file: Blob): Promise<{ base64: string; mime: string }> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 768 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+  return { base64: dataUrl.slice(dataUrl.indexOf(',') + 1), mime: 'image/jpeg' };
 }
 
 // Reads the GPS position stored in a photo, if any, before the upload strips it.
@@ -94,15 +108,18 @@ export function ReportIssue() {
   const [visibility, setVisibility] = useState<Visibility>('public');
   const anonymous = visibility === 'anonymous';
   const confidential = visibility === 'confidential';
-  // Only asked of people without an account. Ticked: a guest session on this device keeps the report
-  // linked to them, so they get updates and can confirm the fix. Unticked: filed and forgotten.
-  const [track, setTrack] = useState(false);
+  // Only asked of people without an account. "Device" keeps a guest session here so the app can
+  // show updates and let them confirm the fix, but only on this browser. "Email" works anywhere,
+  // any device, any time, at the cost of no in-app confirm-the-fix flow. "None": filed and forgotten.
+  const [followUp, setFollowUp] = useState<'none' | 'device' | 'email'>('none');
   const [guest, setGuest] = useState<GuestDetails>(loadDetails);
   const signedOut = !userId;
   const [captchaOk, setCaptchaOk] = useState(false);
   const onCaptcha = useCallback((t: string | null) => setCaptchaOk(Boolean(t)), []);
   const canInteract = Boolean(userId) && !isGuest;
-  const tracking = !signedOut || track || confidential;
+  // A kept guest session; email follow-up needs no session, so it signs out cleanly after submitting.
+  const tracking = !signedOut || followUp === 'device' || confidential;
+  const emailAlerts = signedOut && !confidential && followUp === 'email';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
@@ -132,6 +149,27 @@ export function ReportIssue() {
     onSuccess: (issueId) => { qc.invalidateQueries({ queryKey: ['issues'] }); navigate(`/issues/${issueId}`); },
     onError: (e: Error) => setError(e.message),
   });
+
+  // Reads the first photo and suggests a category, title and description. Never fills the form on
+  // its own — the reporter always sees the suggestion first and chooses whether to use it.
+  const aiSuggest = useMutation({
+    mutationFn: async () => {
+      await ensureSignedIn();
+      const { base64, mime } = await downscaleForAI(photos[0].blob);
+      const { data, error } = await supabase.rpc('suggest_report_details', { p_image_base64: base64, p_mime: mime, p_hint: title.trim() || null });
+      if (error) throw new Error(error.message);
+      const r = data as { ok: boolean; category?: IssueCategory; title?: string; description?: string; looks_like_a_problem?: boolean; error?: string };
+      if (!r.ok) throw new Error(r.error ?? 'Could not get a suggestion.');
+      return r;
+    },
+  });
+  function applyAiSuggestion() {
+    if (!aiSuggest.data) return;
+    setCategory(aiSuggest.data.category!);
+    if (aiSuggest.data.title) setTitle(aiSuggest.data.title);
+    if (aiSuggest.data.description) setDescription(aiSuggest.data.description);
+    aiSuggest.reset();
+  }
 
   async function addPhotos(files: FileList | null) {
     if (!files) return;
@@ -177,9 +215,12 @@ export function ReportIssue() {
       confidential,
       // Only for reports without an account. The server moves these into a private, admin-only
       // table, checks the 3-per-30-days limit, and never stores them on the public report.
-      ...(canInteract ? {} : { guest_name: guest.name.trim(), guest_email: guest.email.trim(), guest_phone: guest.phone.trim(), device_id: deviceId() }),
+      ...(canInteract ? {} : {
+        guest_name: guest.name.trim(), guest_email: guest.email.trim(), guest_phone: guest.phone.trim(), device_id: deviceId(),
+        guest_email_alerts: emailAlerts,
+      }),
     };
-  }, [title, description, details, category, coords, locationText, anonymous, confidential, canInteract, guest]);
+  }, [title, description, details, category, coords, locationText, anonymous, confidential, canInteract, guest, emailAlerts]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -188,6 +229,7 @@ export function ReportIssue() {
 
   // `distinct` is the reporter confirming theirs differs from an existing report the server matched.
   async function send(distinct: boolean) {
+    if (photos.length === 0) { setError('Please add at least one photo of the problem.'); return; }
     if (!canInteract && !validIndianMobile(guest.phone)) { setError('Please enter a valid 10-digit Indian mobile number.'); return; }
     setBusy(true);
     setError(null);
@@ -211,7 +253,7 @@ export function ReportIssue() {
       qc.invalidateQueries({ queryKey: ['issues'] });
       qc.invalidateQueries({ queryKey: ['issue-stats'] });
       refreshProfile();
-      navigate(`/issues/${id}`, { replace: true, state: { justReported: true, tracked: tracking } });
+      navigate(`/issues/${id}`, { replace: true, state: { justReported: true, followUp: !signedOut ? 'account' : confidential ? 'device' : followUp } });
     } catch (err) {
       if (err instanceof DuplicateReportError) setDupe(err);
       else setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
@@ -280,7 +322,7 @@ export function ReportIssue() {
       </div>
 
       <div>
-        <span className="label">Photos (up to {MAX_PHOTOS}, recommended)</span>
+        <span className="label">Photos (up to {MAX_PHOTOS}, at least 1 required)</span>
         {photos.length > 0 && (
           <ul className="mb-2 grid grid-cols-3 gap-2">
             {photos.map((p) => (
@@ -304,6 +346,32 @@ export function ReportIssue() {
           </label>
         )}
         <p className="mt-1 text-[11px] text-muted">Use "Blur" to hide faces and number plates. Hidden location data in photos is removed before upload.</p>
+        {photos.length === 0 && <p className="mt-1 text-[11px] font-semibold text-brick">Add at least one photo so staff can see the problem.</p>}
+
+        {photos.length > 0 && !aiSuggest.data && (
+          <button type="button" className="btn btn-ghost mt-2 w-full" disabled={aiSuggest.isPending} onClick={() => aiSuggest.mutate()}>
+            <Sparkles size={16} /> {aiSuggest.isPending ? 'Looking at your photo…' : 'Fill in category, title & description with AI'}
+          </button>
+        )}
+        {aiSuggest.isError && (
+          <p role="alert" className="mt-2 text-xs font-semibold text-brick">
+            {friendlyError((aiSuggest.error as Error).message)} <button type="button" className="underline" onClick={() => aiSuggest.mutate()}>Try again</button>
+          </p>
+        )}
+        {aiSuggest.data && (
+          <div className="mt-2 space-y-2 rounded-xl border border-gold-line bg-gold-soft p-3">
+            <p className="flex items-center gap-1.5 text-xs font-bold"><Sparkles size={13} /> AI suggestion, from your photo</p>
+            {aiSuggest.data.looks_like_a_problem === false && (
+              <p className="text-xs text-brick">This photo may not show a clear civic problem — check the suggestion below before using it.</p>
+            )}
+            <p className="text-xs"><b>{ISSUE_CATEGORIES[aiSuggest.data.category!]}</b> · {aiSuggest.data.title}</p>
+            <p className="text-xs text-muted">{aiSuggest.data.description}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" className="btn btn-ghost min-h-9 text-xs" onClick={() => aiSuggest.reset()}>Discard</button>
+              <button type="button" className="btn btn-primary min-h-9 text-xs" onClick={applyAiSuggestion}>Use these details</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div>
@@ -387,15 +455,31 @@ export function ReportIssue() {
       </fieldset>
 
       {signedOut && (
-        <label className={`flex items-start gap-3 rounded-xl border p-4 ${tracking ? 'border-primary bg-primary-soft/60' : 'border-line'}`}>
-          <input type="checkbox" className="mt-1 h-4 w-4 accent-primary" checked={tracking} disabled={confidential} onChange={(e) => setTrack(e.target.checked)} />
-          <span className="text-sm">
-            <span className="flex items-center gap-1.5 font-semibold"><BellRing size={15} /> Track this report on this device</span>
-            <span className="block text-xs text-muted">
-              {confidential ? 'Confidential reports are always tracked, so you can see yours again.' : 'Get updates here and confirm when it is fixed. If unticked, keep the reference number to look it up later.'}
-            </span>
-          </span>
-        </label>
+        <fieldset>
+          <legend className="label flex items-center gap-1.5"><BellRing size={14} /> How should we let you know about updates?</legend>
+          {confidential ? (
+            <p className="mt-1 rounded-xl border border-line bg-sand/50 p-3 text-xs text-muted">Confidential reports are always tracked on this device, so you can see yours again.</p>
+          ) : (
+            <div className="mt-1 space-y-2">
+              {([
+                { key: 'device', label: 'On this device', hint: 'Updates appear here, and you can confirm the fix — but only in this browser, on this device.' },
+                { key: 'email', label: `By email${guest.email.trim() ? ` (${guest.email.trim()})` : ''}`, hint: 'Works from any device, any time you check your inbox — even if you never open CivicPulse again on this one.' },
+                { key: 'none', label: "Don't track it", hint: 'Filed and forgotten. Keep the reference number if you want to look it up yourself later.' },
+              ] as const).map((o) => (
+                <label key={o.key} className={`flex items-start gap-3 rounded-xl border p-3 ${followUp === o.key ? 'border-primary bg-primary-soft/60' : 'border-line'}`}>
+                  <input type="radio" name="followup" className="mt-1 h-4 w-4 accent-primary" checked={followUp === o.key} onChange={() => setFollowUp(o.key)} />
+                  <span className="text-sm">
+                    <span className="block font-semibold">{o.label}</span>
+                    <span className="block text-xs text-muted">{o.hint}</span>
+                  </span>
+                </label>
+              ))}
+              {followUp === 'email' && !guest.email.trim() && (
+                <p className="text-xs font-semibold text-brick">Add your email address below so we have somewhere to send updates.</p>
+              )}
+            </div>
+          )}
+        </fieldset>
       )}
 
       {error && <p role="alert" className="text-sm font-semibold text-brick">{friendlyError(error)}</p>}
@@ -433,7 +517,7 @@ export function ReportIssue() {
       )}
       <p className="text-[11px] text-muted">By submitting you accept the <Link to="/terms" className="underline">Terms</Link> and <Link to="/privacy" className="underline">Privacy policy</Link>.</p>
       {signedOut && captchaEnabled && <Captcha onToken={onCaptcha} />}
-      <button type="submit" className="btn btn-primary w-full text-base" disabled={busy || !descOk || (signedOut && captchaEnabled && !captchaOk)}>{busy ? t('report.submitting') : t('report.submit')}</button>
+      <button type="submit" className="btn btn-primary w-full text-base" disabled={busy || !descOk || photos.length === 0 || (signedOut && captchaEnabled && !captchaOk)}>{busy ? t('report.submitting') : t('report.submit')}</button>
 
       <PhotoEditor file={editing?.blob ?? null} open={Boolean(editing)} onClose={() => setEditing(null)} onSave={saveEdit} />
     </form>

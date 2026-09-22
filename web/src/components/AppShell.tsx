@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Activity, Award, Baby, BadgeCheck, Bus, CalendarDays, Database, ExternalLink, Flag, Gauge, Home, LayoutGrid, ListChecks, LogIn, LogOut, Megaphone, MessagesSquare, PlusSquare, Shield, Target, Trophy, User, Users } from 'lucide-react';
+import { Activity, Award, Baby, BadgeCheck, Bus, CalendarDays, Database, ExternalLink, Flag, Gauge, Home, LayoutGrid, LifeBuoy, ListChecks, LogIn, LogOut, Megaphone, MessagesSquare, PlusSquare, Shield, Target, Trophy, User, Users } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useTiers } from '../hooks/useTiers';
 import { useT } from '../lib/i18n';
@@ -145,6 +145,7 @@ function Sidebar() {
           <li><NavLink to="/petitions" className={({ isActive }) => item(isActive)}><Megaphone size={21} /> {t('nav.petitions')}</NavLink></li>
           <li><NavLink to="/community" className={({ isActive }) => item(isActive)}><Target size={21} /> {t('nav.missions')}</NavLink></li>
           <li><NavLink to="/open-data" className={({ isActive }) => item(isActive)}><Database size={21} /> {t('nav.openData')}</NavLink></li>
+          <li><NavLink to="/support" className={({ isActive }) => item(isActive)}><LifeBuoy size={21} /> Help &amp; feedback</NavLink></li>
           {isAdmin && (
             <li className="mt-3 border-t border-line pt-3">
               <NavLink to="/admin" className={({ isActive }) => item(isActive)}><Shield size={21} /> {t('nav.admin')}</NavLink>
@@ -165,7 +166,7 @@ function Sidebar() {
           <Link to="/auth" className="btn btn-primary w-full"><LogIn size={17} /> {t('nav.signIn')}</Link>
         )}
         <DisplaySettings />
-        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted"><Link to="/privacy" className="hover:underline">{t('nav.privacy')}</Link><Link to="/terms" className="hover:underline">{t('nav.terms')}</Link><Link to="/open-data" className="hover:underline">{t('nav.openData')}</Link><Link to="/advertise" className="hover:underline">{t('nav.advertise')}</Link></p>
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted"><Link to="/support" className="hover:underline">Help</Link><Link to="/privacy" className="hover:underline">{t('nav.privacy')}</Link><Link to="/terms" className="hover:underline">{t('nav.terms')}</Link><Link to="/open-data" className="hover:underline">{t('nav.openData')}</Link><Link to="/advertise" className="hover:underline">{t('nav.advertise')}</Link></p>
       </div>
     </aside>
   );

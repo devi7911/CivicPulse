@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, BadgeCheck, Lock, LogOut, Shield, Trash2, TreePine, UserRound } from 'lucide-react';
+import { Award, BadgeCheck, LifeBuoy, Lock, LogOut, Shield, Trash2, TreePine, UserRound } from 'lucide-react';
 import { PasswordCard, SaveGuestAccount } from '../components/AccountCards';
 import { IssueCard } from '../components/FeedCards';
 import { isOrg } from '../lib/accounts';
 import { OrgChip } from '../components/OrgChip';
-import { DataRightsCard, MissionsCard, PushCard, WatchAreasCard } from '../components/ProfileExtras';
+import { DataRightsCard, EmailAlertsCard, MissionsCard, PushCard, WatchAreasCard } from '../components/ProfileExtras';
 import { useMyVerification, VerifyFlow } from '../components/VerifyFlow';
 import { useAuth } from '../hooks/useAuth';
 import { useTiers } from '../hooks/useTiers';
@@ -191,8 +191,14 @@ export function Profile() {
         </section>
       )}
 
+      <Link to="/support" className="card-flat flex items-center justify-between gap-2 p-4 hover:border-primary">
+        <span><span className="block text-sm font-bold">Help & feedback</span><span className="text-xs text-muted">Ask a question, report a problem with the app, or send feedback.</span></span>
+        <LifeBuoy size={20} className="shrink-0 text-primary" aria-hidden />
+      </Link>
+
       {!isGuest && <MissionsCard />}
       {!isGuest && <PushCard userId={userId!} />}
+      {!isGuest && <EmailAlertsCard userId={userId!} />}
       {!isGuest && <WatchAreasCard userId={userId!} />}
       {!isGuest && <PasswordCard />}
       {!isGuest && <DataRightsCard />}

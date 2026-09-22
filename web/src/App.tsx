@@ -25,6 +25,7 @@ const ResetPassword = page(() => import('./pages/ResetPassword'), 'ResetPassword
 const Scorecard = page(() => import('./pages/Scorecard'), 'Scorecard');
 const Terms = page(() => import('./pages/Legal'), 'Terms');
 const Utilities = page(() => import('./pages/Utilities'), 'Utilities');
+const Support = page(() => import('./pages/Support'), 'Support');
 // Dev-only layout preview of the admin Overview; not registered in production builds.
 const DevAdminPreview = import.meta.env.DEV ? page(() => import('./pages/DevAdminPreview'), 'DevAdminPreview') : null;
 
@@ -61,6 +62,7 @@ export function App() {
         <Route path="report" element={lazyEl(ReportIssue)} />
         <Route path="events" element={lazyEl(Events)} />
         <Route path="utilities" element={lazyEl(Utilities)} />
+        <Route path="support" element={lazyEl(Support)} />
         <Route path="profile" element={lazyEl(Profile)} />
         <Route path="auth" element={lazyEl(Auth)} />
         <Route path="admin" element={lazyEl(Admin)} />

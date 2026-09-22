@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellRing, Download, MapPinned, Target, Trash2, UserX } from 'lucide-react';
+import { BellRing, Download, Mail, MapPinned, Target, Trash2, UserX } from 'lucide-react';
 import { LocationPicker } from './IssueMap';
 import { Modal } from './Modal';
 import { useAuth } from '../hooks/useAuth';
@@ -38,6 +38,42 @@ export function PushCard({ userId }: { userId: string }) {
       ) : (
         <p className="rounded-xl bg-sand p-3 text-xs">This browser cannot receive notifications. On iPhone, add CivicPulse to your Home Screen first.</p>
       )}
+      {msg && <p role="status" className="text-xs text-muted">{msg}</p>}
+    </section>
+  );
+}
+
+// Email alerts for everything the citizen follows — works on any device, unlike push, which is
+// tied to whichever browser turned it on.
+export function EmailAlertsCard({ userId }: { userId: string }) {
+  const current = useQuery({
+    queryKey: ['email-alerts', userId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('profiles').select('email_alerts').eq('id', userId).single();
+      if (error) throw new Error(error.message);
+      return (data as { email_alerts: boolean }).email_alerts;
+    },
+  });
+  const [on, setOn] = useState<boolean | null>(null);
+  const shown = on ?? current.data ?? false;
+  const [msg, setMsg] = useState<string | null>(null);
+  const toggle = useMutation({
+    mutationFn: async (next: boolean) => {
+      const { error } = await supabase.from('profiles').update({ email_alerts: next }).eq('id', userId);
+      if (error) throw new Error(error.message);
+      return next;
+    },
+    onSuccess: (next) => { setOn(next); setMsg(next ? 'Done. You will get an email when your reports change.' : 'Email alerts are off.'); },
+    onError: (e: Error) => setMsg(friendlyError(e.message)),
+  });
+
+  return (
+    <section className="card space-y-2 p-4">
+      <h2 className="flex items-center gap-2 text-lg font-semibold"><Mail size={18} /> Email alerts</h2>
+      <p className="text-xs text-muted">Get an email at your account address when your reports change, or when a report you follow is updated. Works even if you never open CivicPulse on this device again.</p>
+      <button type="button" className={`btn w-full ${shown ? 'btn-ghost' : 'btn-primary'}`} disabled={toggle.isPending || current.isLoading} onClick={() => toggle.mutate(!shown)}>
+        {toggle.isPending ? 'Please wait…' : shown ? 'Turn off email alerts' : 'Turn on email alerts'}
+      </button>
       {msg && <p role="status" className="text-xs text-muted">{msg}</p>}
     </section>
   );

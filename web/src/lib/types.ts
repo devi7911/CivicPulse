@@ -163,6 +163,26 @@ export interface NearbyIssue {
   photo_path: string | null;
 }
 
+export type SupportStatus = 'open' | 'answered' | 'closed';
+
+export interface SupportRequest {
+  id: string;
+  subject: string;
+  status: SupportStatus;
+  created_at: string;
+  updated_at: string;
+  author?: Pick<Profile, 'display_name'> | null;
+}
+
+export interface SupportMessage {
+  id: string;
+  request_id: string;
+  author_id: string;
+  is_staff: boolean;
+  body: string;
+  created_at: string;
+}
+
 export interface DepartmentScore {
   department: string;
   total: number;
