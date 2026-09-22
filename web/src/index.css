@@ -1,0 +1,207 @@
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* Design language: calm and institutional. White surfaces on a cool grey canvas, one deep blue,
+   hairline borders, soft shadows. Structure borrowed from banking apps, the feed from social apps. */
+@theme {
+  --color-paper: #f4f6f9;
+  --color-card: #ffffff;
+  --color-sand: #eef1f5;
+  --color-line: #e2e7ee;
+  --color-ink: #0f1b2d;
+  --color-muted: #5d6b7e;
+  --color-primary: #0b5cad;
+  --color-primary-strong: #0a3d7a;
+  --color-primary-soft: #e8f1fb;
+  --color-navy: #0a2540;
+  --color-leaf: #18794e;
+  --color-amber: #a15c07;
+  --color-brick: #c8102e;
+  --color-blush: #fdecee;
+  /* sponsored content has its own warm palette so it is never mistaken for a citizen report */
+  --color-gold: #8a5a00;
+  --color-gold-line: #ecd08a;
+  --color-gold-soft: #fff7e0;
+
+  /* Aliases used across the screens */
+  --color-bg: var(--color-paper);
+  --color-surface: var(--color-card);
+  --color-surface-2: var(--color-sand);
+  --color-brand: var(--color-primary);
+  --color-brand-strong: var(--color-primary);
+  --color-teal: var(--color-primary);
+  --color-marigold: var(--color-primary);
+  --color-ok: var(--color-leaf);
+  --color-warn: var(--color-amber);
+  --color-danger: var(--color-brick);
+
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+
+  /* rem, not px: Tailwind can only order breakpoints that share a unit */
+  --breakpoint-3xl: 118.75rem;
+
+  --shadow-hard: 0 1px 2px rgb(15 27 45 / 0.04), 0 8px 24px -16px rgb(15 27 45 / 0.18);
+  --shadow-hard-sm: 0 1px 2px rgb(15 27 45 / 0.05);
+}
+
+/* Dark mode: follows the device unless the person picks light or dark (data-theme on <html>). */
+@layer base {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-paper: #0b1320;
+    --color-card: #121c2c;
+    --color-sand: #1a2638;
+    --color-line: #243247;
+    --color-ink: #e6ecf4;
+    --color-muted: #9aa8bb;
+    --color-primary: #5aa2ec;
+    --color-primary-strong: #7db6f1;
+    --color-primary-soft: #16304d;
+    --color-navy: #0a1a2e;
+    --color-leaf: #3fb27f;
+    --color-brick: #f0566b;
+    --color-blush: #3a1820;
+    --color-gold: #e0b04b;
+    --color-gold-line: #5c4715;
+    --color-gold-soft: #2a2211;
+    --shadow-hard: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -16px rgb(0 0 0 / 0.6);
+    --shadow-hard-sm: 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+}
+
+/* Outside any layer so these beat Tailwind's utility classes in dark mode. */
+@media all {
+  :root[data-theme="dark"] .btn-ghost, :root[data-theme="dark"] .input, :root[data-theme="dark"] .chip { border-color: #2f4058; }
+  :root[data-theme="dark"] .input::placeholder { color: #6f7f94; }
+  :root[data-theme="dark"] .btn-primary, :root[data-theme="dark"] .chip-on { color: #07111e; }
+  :root[data-theme="dark"] .bg-white { background-color: var(--color-card); }
+  :root[data-theme="dark"] .text-navy { color: var(--color-ink); }
+  :root[data-theme="dark"] header.bg-navy, :root[data-theme="dark"] .from-navy { --color-navy: #10233c; }
+  :root[data-theme="dark"] .border-white { border-color: var(--color-card); }
+  :root[data-theme="dark"] .bg-red-50 { background-color: #2c1216; }
+  :root[data-theme="dark"] .bg-amber-50 { background-color: #2a200c; }
+  :root[data-theme="dark"] .border-amber-300 { border-color: #6b5314; }
+  :root[data-theme="dark"] .border-red-200 { border-color: #5b2029; }
+  :root[data-theme="dark"] .text-amber-900 { color: #f4d9a3; }
+  :root[data-theme="dark"] .text-red-800 { color: #ffc2cb; }
+  :root[data-theme="dark"] .bg-emerald-100 { background-color: #12301f; }
+  :root[data-theme="dark"] .text-emerald-800 { color: #9fe3bf; }
+  :root[data-theme="dark"] .bg-amber-100 { background-color: #2a200c; }
+  :root[data-theme="dark"] .text-amber-800 { color: #f4d9a3; }
+  :root[data-theme="dark"] .bg-orange-100 { background-color: #2e1a0c; }
+  :root[data-theme="dark"] .text-orange-800 { color: #fbc99a; }
+  :root[data-theme="dark"] .bg-red-100 { background-color: #2c1216; }
+  :root[data-theme="dark"] .text-red-800 { color: #ffc2cb; }
+  :root[data-theme="dark"] .bg-\[\#e7f6ec\] { background-color: #12301f; }
+  :root[data-theme="dark"] .bg-rose-100 { background-color: #3a1522; }
+  :root[data-theme="dark"] .text-rose-800 { color: #fdb6c8; }
+  :root[data-theme="dark"] .bg-violet-100 { background-color: #2a1c45; }
+  :root[data-theme="dark"] .text-violet-800 { color: #d6c3ff; }
+  :root[data-theme="dark"] .bg-sky-100 { background-color: #0f2c40; }
+  :root[data-theme="dark"] .text-sky-800 { color: #a9dcff; }
+  :root[data-theme="dark"] .leaflet-tile-pane { filter: brightness(.8) contrast(1.1); }
+  :root[data-theme="dark"] .stamp { background: color-mix(in srgb, currentColor 18%, transparent); }
+}
+
+html, body, #root { height: 100%; }
+body {
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  background-color: var(--color-paper);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+h1, h2, h3 { letter-spacing: -0.015em; }
+::selection { background: var(--color-primary-soft); }
+
+@layer components {
+  .card { border-radius: 1rem; border: 1px solid var(--color-line); background: var(--color-card); box-shadow: var(--shadow-hard); }
+  .card-flat { border-radius: .75rem; border: 1px solid var(--color-line); background: var(--color-card); }
+
+  .page-title { font-size: 1.625rem; line-height: 1.2; font-weight: 700; letter-spacing: -0.025em; }
+  @media (min-width: 1024px) { .page-title { font-size: 2rem; } }
+  .marker { color: var(--color-primary); }
+
+  .btn {
+    display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem;
+    border-radius: .625rem; border: 1px solid transparent; padding: 0 1.1rem;
+    font-size: .9rem; font-weight: 600; color: var(--color-ink);
+    transition: background-color .15s, border-color .15s, box-shadow .15s;
+  }
+  .btn:disabled { opacity: .5; pointer-events: none; }
+  .btn-primary { background: var(--color-primary); color: #fff; }
+  .btn-primary:hover { background: var(--color-primary-strong); }
+  .btn-ghost { background: var(--color-card); border-color: #cfd7e2; color: var(--color-primary); }
+  .btn-ghost:hover { background: var(--color-primary-soft); border-color: var(--color-primary); }
+  .btn-danger { background: var(--color-brick); color: #fff; }
+  .btn-danger:hover { filter: brightness(.93); }
+  .btn-dark { background: var(--color-navy); color: #fff; }
+  .btn-dark:hover { background: var(--color-primary-strong); }
+
+  .input {
+    min-height: 2.75rem; width: 100%; border-radius: .625rem; border: 1px solid #cfd7e2;
+    background: var(--color-card); padding: .55rem .8rem; font-size: .925rem; color: var(--color-ink);
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .input::placeholder { color: #9aa6b6; }
+  .input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(11 92 173 / 0.15); }
+  .label { margin-bottom: .35rem; display: block; font-size: .8rem; font-weight: 600; color: var(--color-muted); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: .25rem; white-space: nowrap; border-radius: 9999px;
+    border: 1px solid #cfd7e2; background: var(--color-card); padding: .4rem .9rem;
+    font-size: .8rem; font-weight: 600; color: var(--color-muted); transition: all .12s;
+  }
+  .chip:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  .chip-on, .chip-on:hover { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+
+  .tag {
+    display: inline-flex; align-items: center; border-radius: 9999px; background: var(--color-sand);
+    padding: .15rem .55rem; font-size: .7rem; font-weight: 600; color: var(--color-muted);
+  }
+
+  /* Status pill: solid colour with white text so it reads at a glance, never placed over a photo. */
+  .status {
+    display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; border-radius: 9999px;
+    padding: .22rem .65rem; font-size: .7rem; font-weight: 700; letter-spacing: .01em; color: #fff;
+  }
+  .status-pending { background: #b45309; }
+  .status-progress { background: var(--color-primary); }
+  .status-resolved { background: var(--color-leaf); }
+  .status-closed { background: #475467; }
+  .pill-overdue {
+    display: inline-flex; align-items: center; gap: .25rem; border-radius: 9999px; padding: .22rem .6rem;
+    font-size: .7rem; font-weight: 700; color: #fff; background: var(--color-brick);
+  }
+
+  /* neutral outlined pill for non-status labels (tier title, verification state) */
+  .stamp {
+    display: inline-flex; align-items: center; border-radius: 9999px; padding: .2rem .6rem;
+    font-size: .7rem; font-weight: 700; background: color-mix(in srgb, currentColor 11%, white);
+  }
+
+  .stagger > * { animation: rise .3s ease-out both; }
+  .stagger > *:nth-child(2) { animation-delay: .04s; }
+  .stagger > *:nth-child(3) { animation-delay: .08s; }
+  .stagger > *:nth-child(n + 4) { animation-delay: .12s; }
+
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Printing (e.g. the admin dashboard's PDF button): just the page content, in light colours. */
+@media print {
+  aside, header, nav, [role="tablist"], .leaflet-control-container, a[href="#main"] { display: none !important; }
+  body { background: #fff !important; color: #101828 !important; }
+  .lg\:ps-56 { padding-inline-start: 0 !important; }
+  main { max-width: none !important; padding: 0 !important; }
+  .card { box-shadow: none !important; break-inside: avoid; }
+  button[aria-label*="SOS" i], .fixed { display: none !important; }
+}

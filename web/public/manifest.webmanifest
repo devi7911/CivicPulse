@@ -1,0 +1,10 @@
+{
+  "name": "CivicPulse",
+  "short_name": "CivicPulse",
+  "description": "Civic community engagement for Hyderabad",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#0a2540",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
