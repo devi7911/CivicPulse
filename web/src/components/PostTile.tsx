@@ -45,6 +45,7 @@ export function IssueTile({ issue, featured = false }: { issue: Issue; featured?
         <div className="flex flex-wrap items-center gap-1.5">
           <span className={STATUS_CLASS[issue.status]}><StatusIcon size={12} strokeWidth={2.6} />{STATUS_LABEL[issue.status]}</span>
           {isOverdue(issue) && <span className="pill-overdue">Overdue</span>}
+          {issue.reopen_count > 0 && issue.status !== 'resolved' && <span className="pill-overdue">Disputed fix</span>}
           {issue.severity === 'high' && (
             <span className="inline-flex items-center gap-1 rounded-full bg-blush px-2 py-[.22rem] text-[.7rem] font-bold text-brick"><TriangleAlert size={11} strokeWidth={2.6} />High priority</span>
           )}

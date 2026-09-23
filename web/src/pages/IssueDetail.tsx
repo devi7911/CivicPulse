@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowBigUp, ArrowLeft, BadgeCheck, LogIn, Bell, BellOff, CalendarClock, Camera, Check, Copy, EyeOff, Lock, MapPin, Pencil, Share2, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
+import { ArrowBigUp, ArrowLeft, BadgeCheck, LogIn, Bell, BellOff, CalendarClock, Camera, Check, Copy, EyeOff, Lock, MapPin, Pencil, Reply, Share2, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { FileWithGhmc, FlagButton, HideToggle } from '../components/Moderation';
 import { friendlyError } from '../lib/friendlyError';
@@ -28,6 +28,8 @@ export function IssueDetail() {
   const [rejectNote, setRejectNote] = useState('');
   const [editing, setEditing] = useState<{ title: string; description: string; location_text: string } | null>(null);
   const [editComment, setEditComment] = useState<{ id: string; body: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState('');
   const navigate = useNavigate();
   const reportState = location.state as { justReported?: boolean; followUp?: 'account' | 'device' | 'email' | 'none' } | null;
   const justReported = Boolean(reportState?.justReported);
@@ -132,11 +134,11 @@ export function IssueDetail() {
   });
 
   const addComment = useMutation({
-    mutationFn: async (text: string) => {
-      const { error } = await supabase.from('comments').insert({ issue_id: id!, author_id: userId!, body: text });
+    mutationFn: async (a: { text: string; parentId: string | null }) => {
+      const { error } = await supabase.from('comments').insert({ issue_id: id!, author_id: userId!, body: a.text, parent_id: a.parentId });
       if (error) throw new Error(error.message);
     },
-    onSuccess: () => { setBody(''); setError(null); invalidate(['comments', id!], ['issue', id!]); refreshProfile(); },
+    onSuccess: (_d, a) => { if (a.parentId) { setReplyTo(null); setReplyBody(''); } else setBody(''); setError(null); invalidate(['comments', id!], ['issue', id!]); refreshProfile(); },
     onError: (e: Error) => setError(e.message),
   });
 
@@ -225,7 +227,13 @@ export function IssueDetail() {
   function submit(e: FormEvent) {
     e.preventDefault();
     const text = body.trim();
-    if (text) addComment.mutate(text);
+    if (text) addComment.mutate({ text, parentId: null });
+  }
+
+  function submitReply(e: FormEvent, parentId: string) {
+    e.preventDefault();
+    const text = replyBody.trim();
+    if (text) addComment.mutate({ text, parentId });
   }
 
   async function copyRef() {
@@ -248,7 +256,7 @@ export function IssueDetail() {
               <p className="mt-0.5 text-xs text-muted">You will get updates in the bell whenever it changes, and can confirm the fix here. CivicPulse is not an official GHMC channel.</p>
             )}
             {followUp === 'device' && (
-              <p className="mt-1.5 text-xs">You are tracking this on this device only. <Link to="/auth" className="font-bold text-primary underline">Create an account</Link> to track it anywhere, and to back, comment on or follow other reports.</p>
+              <p className="mt-1.5 text-xs">You are tracking this on this device only. <Link to="/auth" state={{ mode: 'signup' }} className="font-bold text-primary underline">Create an account</Link> to track it anywhere, and to back, comment on or follow other reports.</p>
             )}
           </div>
         )}
@@ -436,6 +444,7 @@ export function IssueDetail() {
 
         <section aria-labelledby="timeline-h" className="card p-4">
           <h2 id="timeline-h" className="mb-3 text-base font-bold">Progress</h2>
+          <ReportStepper it={it} timeline={timeline.data ?? []} />
           <ol className="space-y-3 border-l border-line pl-4">
             {(timeline.data ?? []).map((t) => (
               <li key={t.id} className="relative text-sm">
@@ -457,42 +466,35 @@ export function IssueDetail() {
               </span>
             )}
           </div>
-          <ul className="space-y-2">
-            {(comments.data ?? []).map((c) => (
-              <li key={c.id} className={`card-flat p-3 text-sm ${c.author?.role === 'admin' || (c.author?.account_type === 'government' && c.author.verified) ? 'bg-primary-soft' : ''}`}>
-                <p className="mb-1 flex flex-wrap items-center gap-1 text-xs text-muted">
-                  <span className="font-medium text-ink">{c.author && c.author.account_type !== 'individual' && c.author.org_name ? c.author.org_name : c.author?.display_name ?? 'Citizen'}</span>
-                  {c.author?.role === 'admin' && <span className="status status-progress">Staff</span>}
-                  {c.author?.account_type === 'government' && c.author.verified && <span className="status status-resolved">Official</span>}
-                  {c.author && c.author.account_type !== 'government' && <OrgChip type={c.author.account_type} verified={c.author.verified} />}
-                  <span aria-hidden>·</span> {timeAgo(c.created_at)}
-                </p>
-                {editComment?.id === c.id ? (
-                  <div className="space-y-2">
-                    <textarea className="input" rows={2} maxLength={500} value={editComment.body} aria-label="Edit comment" onChange={(e) => setEditComment({ id: c.id, body: e.target.value })} />
-                    <div className="flex justify-end gap-2">
-                      <button type="button" className="btn btn-ghost min-h-9 px-3 text-xs" onClick={() => setEditComment(null)}>Cancel</button>
-                      <button type="button" className="btn btn-primary min-h-9 px-3 text-xs" disabled={!editComment.body.trim() || saveComment.isPending} onClick={() => saveComment.mutate(editComment)}>Save</button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className={`whitespace-pre-wrap ${c.hidden ? 'text-muted italic' : ''}`}>{c.hidden && !isAdmin ? 'This comment is hidden while a moderator reviews it.' : c.body}</p>
-                )}
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  {c.author_id === userId && editComment?.id !== c.id && (
-                    <>
-                      {Date.now() - new Date(c.created_at).getTime() < 15 * 60_000 && (
-                        <button type="button" className="inline-flex min-h-8 items-center gap-1 px-1 text-[11px] font-semibold text-muted hover:text-ink" onClick={() => setEditComment({ id: c.id, body: c.body })}><Pencil size={12} /> Edit</button>
-                      )}
-                      <button type="button" className="inline-flex min-h-8 items-center gap-1 px-1 text-[11px] font-semibold text-muted hover:text-brick"
-                        onClick={() => { if (window.confirm('Delete this comment?')) deleteComment.mutate(c.id); }}><Trash2 size={12} /> Delete</button>
-                    </>
+          <ul className="space-y-3">
+            {(comments.data ?? []).filter((c) => !c.parent_id).map((c) => {
+              const replies = (comments.data ?? []).filter((r) => r.parent_id === c.id);
+              return (
+                <li key={c.id} className="space-y-2">
+                  <CommentRow c={c} userId={userId} isAdmin={isAdmin} canInteract={canInteract}
+                    editComment={editComment} setEditComment={setEditComment} saveComment={saveComment} deleteComment={deleteComment}
+                    onReply={canInteract && remaining > 0 ? () => { setReplyTo(replyTo === c.id ? null : c.id); setReplyBody(''); } : undefined} />
+                  {replies.length > 0 && (
+                    <ul className="ml-5 space-y-2 border-l border-line pl-3">
+                      {replies.map((r) => (
+                        <CommentRow key={r.id} c={r} userId={userId} isAdmin={isAdmin} canInteract={canInteract}
+                          editComment={editComment} setEditComment={setEditComment} saveComment={saveComment} deleteComment={deleteComment} />
+                      ))}
+                    </ul>
                   )}
-                  {canInteract && c.author_id !== userId && <FlagButton type="comment" id={c.id} userId={userId!} compact />}
-                  {isAdmin && <HideToggle type="comment" id={c.id} hidden={Boolean(c.hidden)} />}
-                </div>
-              </li>
-            ))}
+                  {replyTo === c.id && (
+                    <form className="ml-5 space-y-2 border-l border-line pl-3" onSubmit={(e) => submitReply(e, c.id)}>
+                      <textarea className="input" rows={2} maxLength={500} autoFocus value={replyBody} aria-label={`Reply to ${c.author?.display_name ?? 'comment'}`}
+                        onChange={(e) => setReplyBody(e.target.value)} placeholder="Write a reply…" />
+                      <div className="flex justify-end gap-2">
+                        <button type="button" className="btn btn-ghost min-h-9 px-3 text-xs" onClick={() => { setReplyTo(null); setReplyBody(''); }}>Cancel</button>
+                        <button type="submit" className="btn btn-primary min-h-9 px-3 text-xs" disabled={!replyBody.trim() || addComment.isPending}>{addComment.isPending ? 'Posting…' : 'Post reply'}</button>
+                      </div>
+                    </form>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           {canInteract && remaining > 0 && (
             <form onSubmit={submit} className="space-y-2">
@@ -513,5 +515,84 @@ export function IssueDetail() {
         </section>
       </div>
     </article>
+  );
+}
+
+// One comment or reply card. Replies are rendered nested (see the caller), so this never renders
+// its own "Reply" action for a reply — the thread is kept to 2 levels.
+function CommentRow({ c, userId, isAdmin, canInteract, editComment, setEditComment, saveComment, deleteComment, onReply }: {
+  c: Comment; userId: string | null; isAdmin: boolean; canInteract: boolean;
+  editComment: { id: string; body: string } | null; setEditComment: (v: { id: string; body: string } | null) => void;
+  saveComment: { mutate: (v: { id: string; body: string }) => void; isPending: boolean };
+  deleteComment: { mutate: (id: string) => void };
+  onReply?: () => void;
+}) {
+  return (
+    <div className={`card-flat p-3 text-sm ${c.author?.role === 'admin' || (c.author?.account_type === 'government' && c.author.verified) ? 'bg-primary-soft' : ''}`}>
+      <p className="mb-1 flex flex-wrap items-center gap-1 text-xs text-muted">
+        <span className="font-medium text-ink">{c.author && c.author.account_type !== 'individual' && c.author.org_name ? c.author.org_name : c.author?.display_name ?? 'Citizen'}</span>
+        {c.author?.account_type === 'individual' && c.author.verified && <BadgeCheck size={13} className="shrink-0 fill-primary text-white" aria-label="Verified" />}
+        {c.author?.role === 'admin' && <span className="status status-progress">Staff</span>}
+        {c.author?.account_type === 'government' && c.author.verified && <span className="status status-resolved">Official</span>}
+        {c.author && c.author.account_type !== 'government' && <OrgChip type={c.author.account_type} verified={c.author.verified} />}
+        <span aria-hidden>·</span> {timeAgo(c.created_at)}
+      </p>
+      {editComment?.id === c.id ? (
+        <div className="space-y-2">
+          <textarea className="input" rows={2} maxLength={500} value={editComment.body} aria-label="Edit comment" onChange={(e) => setEditComment({ id: c.id, body: e.target.value })} />
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn btn-ghost min-h-9 px-3 text-xs" onClick={() => setEditComment(null)}>Cancel</button>
+            <button type="button" className="btn btn-primary min-h-9 px-3 text-xs" disabled={!editComment.body.trim() || saveComment.isPending} onClick={() => saveComment.mutate(editComment)}>Save</button>
+          </div>
+        </div>
+      ) : (
+        <p className={`whitespace-pre-wrap ${c.hidden ? 'text-muted italic' : ''}`}>{c.hidden && !isAdmin ? 'This comment is hidden while a moderator reviews it.' : c.body}</p>
+      )}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        {c.author_id === userId && editComment?.id !== c.id && (
+          <>
+            {Date.now() - new Date(c.created_at).getTime() < 15 * 60_000 && (
+              <button type="button" className="inline-flex min-h-8 items-center gap-1 px-1 text-[11px] font-semibold text-muted hover:text-ink" onClick={() => setEditComment({ id: c.id, body: c.body })}><Pencil size={12} /> Edit</button>
+            )}
+            <button type="button" className="inline-flex min-h-8 items-center gap-1 px-1 text-[11px] font-semibold text-muted hover:text-brick"
+              onClick={() => { if (window.confirm('Delete this comment?')) deleteComment.mutate(c.id); }}><Trash2 size={12} /> Delete</button>
+          </>
+        )}
+        {onReply && <button type="button" className="inline-flex min-h-8 items-center gap-1 px-1 text-[11px] font-semibold text-muted hover:text-ink" onClick={onReply}><Reply size={12} /> Reply</button>}
+        {canInteract && c.author_id !== userId && <FlagButton type="comment" id={c.id} userId={userId!} compact />}
+        {isAdmin && <HideToggle type="comment" id={c.id} hidden={Boolean(c.hidden)} />}
+      </div>
+    </div>
+  );
+}
+
+// A forward-looking pipeline (as opposed to the chronological log below it): shows where the
+// report sits among Reported → In progress → Resolved/Closed, including stages not reached yet,
+// so a report stuck at "Reported" for weeks doesn't read as if nothing is happening.
+function ReportStepper({ it, timeline }: { it: Issue; timeline: TimelineEntry[] }) {
+  const passedProgress = timeline.some((t) => t.status === 'progress');
+  const terminal = it.status === 'resolved' || it.status === 'closed';
+  const activeIndex = terminal ? 2 : it.status === 'progress' ? 1 : 0;
+  const steps: { label: string; done: boolean; skipped?: boolean }[] = [
+    { label: 'Reported', done: true },
+    { label: 'In progress', done: passedProgress, skipped: !passedProgress && terminal },
+    { label: it.status === 'closed' ? 'Closed' : 'Resolved', done: terminal },
+  ];
+  return (
+    <div className="mb-4 flex items-start">
+      {steps.map((s, i) => (
+        <div key={s.label} className={`flex items-center ${i < steps.length - 1 ? 'flex-1' : ''}`}>
+          <div className="flex flex-col items-center gap-1">
+            <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+              s.done ? 'bg-primary text-white' : i === activeIndex ? 'border-2 border-primary text-primary' : s.skipped ? 'border border-dashed border-line text-muted' : 'border border-line text-muted'
+            }`}>
+              {s.done ? <Check size={13} /> : s.skipped ? '–' : i + 1}
+            </span>
+            <span className={`w-16 text-center text-[11px] font-semibold ${s.done || i === activeIndex ? 'text-ink' : 'text-muted'}`}>{s.label}</span>
+          </div>
+          {i < steps.length - 1 && <span className={`mx-2 mt-3 h-0.5 flex-1 ${steps[i + 1].done ? 'bg-primary' : 'bg-line'}`} aria-hidden />}
+        </div>
+      ))}
+    </div>
   );
 }

@@ -52,11 +52,13 @@ function Wordmark({ light = false }: { light?: boolean }) {
 }
 
 // Achievement banner: current tier, a thin progress bar and how far the next tier is.
+// Guests get a real (anonymous) profile row and do earn points, but showing a tier badge before
+// anyone has consciously signed up makes a guest look logged in when they never took that step.
 function TierBanner({ variant }: { variant: 'bar' | 'panel' }) {
-  const { profile } = useAuth();
+  const { profile, isGuest } = useAuth();
   const tiers = useTiers();
   const progress = profile && tiers.data ? tierProgress(tiers.data, profile.points) : null;
-  if (!profile || !progress) return null;
+  if (!profile || !progress || isGuest) return null;
   const label = progress.next ? `${progress.pointsToNext} pts to ${progress.next.name}` : 'Top tier reached';
 
   if (variant === 'bar') {
@@ -83,7 +85,7 @@ function TierBanner({ variant }: { variant: 'bar' | 'panel' }) {
 }
 
 function Sidebar() {
-  const { profile, isAdmin, signOut } = useAuth();
+  const { profile, isAdmin, isGuest, signOut } = useAuth();
   const { t } = useT();
   const item = (active: boolean) =>
     `relative flex min-h-11 items-center gap-3 rounded-lg px-3 text-[15px] transition-colors ${
@@ -156,7 +158,7 @@ function Sidebar() {
 
       <div className="space-y-3 border-t border-line p-4">
         <TierBanner variant="panel" />
-        {profile ? (
+        {profile && !isGuest ? (
           <div className="flex items-center gap-2.5">
             <Avatar name={profile.display_name} path={profile.avatar_path} size={36} />
             <span className="min-w-0 flex-1 truncate text-sm font-semibold">{profile.display_name}</span>
@@ -173,7 +175,7 @@ function Sidebar() {
 }
 
 export function AppShell() {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isGuest } = useAuth();
   const { t } = useT();
   const current = useStaffTab();
   return (
@@ -199,7 +201,7 @@ export function AppShell() {
                 </Link>
               )}
               <DisplaySettingsButton />
-              {profile
+              {profile && !isGuest
                 ? <><NotificationBell tone="light" /><Link to="/profile" aria-label={t('nav.profile')}><Avatar name={profile.display_name} path={profile.avatar_path} size={34} ring /></Link></>
                 : <Link to="/auth" className="rounded-lg bg-white px-3 py-2 text-sm font-bold whitespace-nowrap text-primary">{t('nav.signIn')}</Link>}
             </span>

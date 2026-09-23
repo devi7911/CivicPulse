@@ -184,9 +184,13 @@ export function Advertise() {
               )}
               <div className="flex flex-wrap gap-2">
                 {(c.status === 'draft' || c.status === 'rejected') && <>
-                  <button type="button" className="btn btn-primary min-h-9 px-3 text-xs" disabled={act.isPending} onClick={() => act.mutate({ id: c.id, action: 'submit' })}>Submit for review</button>
+                  <button type="button" className="btn btn-primary min-h-9 px-3 text-xs" disabled={act.isPending || !c.media_path}
+                    title={c.media_path ? undefined : 'Add a photo, GIF or video first'} onClick={() => act.mutate({ id: c.id, action: 'submit' })}>Submit for review</button>
                   <button type="button" className="btn btn-ghost min-h-9 px-3 text-xs" onClick={() => { setMsg(null); setEditing({ ...c, starts_at: toLocal(new Date(c.starts_at)), ends_at: toLocal(new Date(c.ends_at)) }); }}><Pencil size={13} /> Edit</button>
                 </>}
+                {(c.status === 'draft' || c.status === 'rejected') && !c.media_path && (
+                  <p className="w-full text-[11px] text-brick">Add a photo, GIF or video before you can submit this ad for review.</p>
+                )}
                 {c.status === 'approved' && <button type="button" className="btn btn-ghost min-h-9 px-3 text-xs" onClick={() => act.mutate({ id: c.id, action: 'pause' })}>Pause</button>}
                 {c.status === 'paused' && <button type="button" className="btn btn-primary min-h-9 px-3 text-xs" onClick={() => act.mutate({ id: c.id, action: 'resume' })}>Resume</button>}
                 {!c.paid && <button type="button" className="btn btn-ghost min-h-9 px-3 text-xs text-danger" onClick={() => { if (confirm('Delete this campaign?')) act.mutate({ id: c.id, action: 'delete' }); }}><Trash2 size={13} /> Delete</button>}
@@ -280,7 +284,7 @@ function CampaignForm({ userId, advertiserId, draft, onClose, onSaved }: { userI
           <div><label className="label" htmlFor="c-url">Button link</label>
             <input id="c-url" className="input" type="url" required pattern="https://.*" placeholder="https://" value={f.cta_url ?? ''} onChange={(e) => setF({ ...f, cta_url: e.target.value })} /></div>
         </div>
-        <label className="label" htmlFor="c-media">Image, GIF or short video (optional, 8 MB max)</label>
+        <label className="label" htmlFor="c-media">Image, GIF or short video (required before you can submit for review, 8 MB max)</label>
         <input id="c-media" className="input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         <div className="grid grid-cols-2 gap-2">
           <div><label className="label" htmlFor="c-cat">Show next to (optional)</label>

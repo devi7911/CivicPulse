@@ -72,7 +72,7 @@ export function SosButton() {
         onPointerUp={cancelHold}
         onPointerLeave={cancelHold}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setOpen(true); }}
-        className="fixed right-4 bottom-20 z-40 lg:right-8 lg:bottom-8 flex h-16 w-16 touch-none select-none flex-col items-center justify-center overflow-hidden rounded-full bg-brick text-white shadow-lg shadow-brick/30 ring-4 ring-white"
+        className="fixed right-3 bottom-[4.75rem] z-40 lg:right-8 lg:bottom-8 flex h-14 w-14 lg:h-16 lg:w-16 touch-none select-none flex-col items-center justify-center overflow-hidden rounded-full bg-brick text-white shadow-lg shadow-brick/30 ring-2 ring-white lg:ring-4"
       >
         <span
           aria-hidden

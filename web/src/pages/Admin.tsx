@@ -230,11 +230,13 @@ function QueueCard({ it, me, claim, busy, onUpdate, onClaim, onMerge }: {
   // Contact details are encrypted; they are decrypted only on request, and each request is audited.
   const [contact, setContact] = useState<ReporterContact | null | undefined>(undefined);
   const [revealing, setRevealing] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
   async function reveal() {
     setRevealing(true);
+    setRevealError(null);
     const { data, error } = await supabase.rpc('admin_reporter_contacts', { p_issues: [it.id] });
     setRevealing(false);
-    if (error) { window.alert(error.message); return; }
+    if (error) { setRevealError(friendlyError(error.message)); return; }
     setContact(((data as ReporterContact[] | null) ?? [])[0] ?? null);
   }
   const [closing, setClosing] = useState(false);
@@ -271,9 +273,12 @@ function QueueCard({ it, me, claim, busy, onUpdate, onClaim, onMerge }: {
 
       <fieldset disabled={Boolean(lockedBy)} className="space-y-3 disabled:opacity-50">
       {contact === undefined ? (
-        <button type="button" className="inline-flex min-h-8 items-center text-xs font-semibold text-primary underline" disabled={revealing} onClick={reveal}>
-          {revealing ? 'Decrypting…' : 'Show reporter contact (logged)'}
-        </button>
+        <div className="space-y-1">
+          <button type="button" className="inline-flex min-h-8 items-center text-xs font-semibold text-primary underline" disabled={revealing} onClick={reveal}>
+            {revealing ? 'Decrypting…' : 'Show reporter contact (logged)'}
+          </button>
+          {revealError && <p role="alert" className="text-xs font-semibold text-brick">{revealError}</p>}
+        </div>
       ) : contact === null ? (
         <p className="text-xs text-muted">Reported with an account. Reply with a comment on the report.</p>
       ) : (
@@ -365,7 +370,7 @@ function AiSuggestDept({ issueId, onUse }: { issueId: string; onUse: (dept: stri
     setLoading(false);
     if (error) { setState({ error: friendlyError(error.message) }); return; }
     const r = data as { ok: boolean; department?: string; confidence?: string; reason?: string; cached?: boolean; error?: string };
-    setState(r.ok ? { department: r.department!, confidence: r.confidence, reason: r.reason, cached: r.cached } : { error: r.error ?? 'Could not get a suggestion.' });
+    setState(r.ok && r.department ? { department: r.department, confidence: r.confidence, reason: r.reason, cached: r.cached } : { error: r.error ?? 'Could not get a suggestion.' });
   }
 
   if (!state) {
@@ -473,6 +478,7 @@ function EventsAdmin({ userId }: { userId: string }) {
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">All events</h2>
+        {list.isError && <p role="alert" className="text-sm font-semibold text-brick">{friendlyError(list.error?.message ?? String(list.error))}</p>}
         <ul className="space-y-2">
           {(list.data ?? []).map((ev) => (
             <Row key={ev.id} title={ev.title} sub={`${formatEventTime(ev.starts_at, ev.ends_at)} · ${ev.rsvp_count} adults, ${ev.children_count} children`} onEdit={() => startEdit(ev)} onDelete={() => remove.mutate(ev.id)} />
@@ -568,6 +574,7 @@ function NgosAdmin() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">NGOs</h2>
         <p className="text-xs text-muted">Only vetted NGOs can appear in the feed.</p>
+        {ngos.isError && <p role="alert" className="text-sm font-semibold text-brick">{friendlyError(ngos.error?.message ?? String(ngos.error))}</p>}
         <ul className="space-y-2">
           {(ngos.data ?? []).map((n) => (
             <Row key={n.id} title={n.name} sub={n.donate_url} onDelete={() => delNgo.mutate(n.id)}>
@@ -588,18 +595,19 @@ function NgosAdmin() {
         <div><label className="label" htmlFor="pt">Headline</label><input id="pt" className="input" required minLength={5} maxLength={120} value={post.title} onChange={(e) => setPost({ ...post, title: e.target.value })} /></div>
         <div><label className="label" htmlFor="pb">Message</label><textarea id="pb" className="input" rows={3} required minLength={10} maxLength={1000} value={post.body} onChange={(e) => setPost({ ...post, body: e.target.value })} /></div>
         <div>
-          <span className="label">Animation or video (recommended)</span>
+          <span className="label">Photo, GIF or video (required)</span>
           <label className="btn btn-ghost w-full cursor-pointer">
-            {media ? media.name.slice(0, 32) : 'Choose a GIF, MP4 or WebM'}
-            <input type="file" accept="image/gif,video/mp4,video/webm,image/webp,image/jpeg,image/png" className="sr-only" onChange={(e) => setMedia(e.target.files?.[0] ?? null)} />
+            {media ? media.name.slice(0, 32) : 'Choose an image, GIF, MP4 or WebM'}
+            <input type="file" required accept="image/gif,video/mp4,video/webm,image/webp,image/jpeg,image/png" className="sr-only" onChange={(e) => setMedia(e.target.files?.[0] ?? null)} />
           </label>
           <p className="mt-1 text-[11px] text-muted">Up to 8 MB. Moving media helps people recognise the post as an ad. Videos play muted on a loop, so do not rely on sound.</p>
         </div>
-        <button type="submit" className="btn btn-primary w-full" disabled={addPost.isPending || vetted.length === 0}>{addPost.isPending ? 'Publishing…' : 'Publish post'}</button>
+        <button type="submit" className="btn btn-primary w-full" disabled={addPost.isPending || vetted.length === 0 || !media}>{addPost.isPending ? 'Publishing…' : 'Publish post'}</button>
       </form>
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Sponsored posts</h2>
+        {posts.isError && <p role="alert" className="text-sm font-semibold text-brick">{friendlyError(posts.error?.message ?? String(posts.error))}</p>}
         <ul className="space-y-2">
           {(posts.data ?? []).map((p) => (
             <Row key={p.id} title={p.title} sub={p.ngo?.name} onDelete={() => delPost.mutate(p.id)}>
@@ -681,6 +689,7 @@ function DirectoryAdmin() {
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Emergency directory</h2>
+        {helplines.isError && <p role="alert" className="text-sm font-semibold text-brick">{friendlyError(helplines.error?.message ?? String(helplines.error))}</p>}
         <ul className="space-y-2">
           {(helplines.data ?? []).map((x) => <Row key={x.id} title={`${x.name} · ${x.phone}`} sub={x.kind === 'police_station' ? `Police station · ${x.area ?? ''}` : 'National helpline'}
             onEdit={() => { setEditH(x.id); setH({ name: x.name, phone: x.phone, area: x.area ?? '', address: x.address ?? '' }); document.getElementById('hn')?.focus(); }} onDelete={() => delHelpline.mutate(x.id)} />)}
@@ -706,6 +715,7 @@ function DirectoryAdmin() {
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Payment links</h2>
+        {links.isError && <p role="alert" className="text-sm font-semibold text-brick">{friendlyError(links.error?.message ?? String(links.error))}</p>}
         <ul className="space-y-2">
           {(links.data ?? []).map((x) => <Row key={x.id} title={x.title} sub={x.url}
             onEdit={() => { setEditL(x.id); setL({ category: x.category, title: x.title, description: x.description, url: x.url }); document.getElementById('lt')?.focus(); }} onDelete={() => delLink.mutate(x.id)} />)}
@@ -784,18 +794,23 @@ function VerifyAdmin() {
 function AadhaarCheck({ requestId }: { requestId: string }) {
   const [last4, setLast4] = useState<string | null | undefined>(undefined);
   const [revealing, setRevealing] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
   async function reveal() {
     setRevealing(true);
+    setRevealError(null);
     const { data, error } = await supabase.rpc('admin_aadhaar_last4', { p_request: requestId });
     setRevealing(false);
-    if (error) { window.alert(error.message); return; }
+    if (error) { setRevealError(friendlyError(error.message)); return; }
     setLast4((data as string | null) ?? null);
   }
   if (last4 === undefined) {
     return (
-      <button type="button" className="inline-flex min-h-8 items-center text-xs font-semibold text-primary underline" disabled={revealing} onClick={reveal}>
-        {revealing ? 'Decrypting…' : 'Show Aadhaar last 4 digits (logged)'}
-      </button>
+      <div className="space-y-1">
+        <button type="button" className="inline-flex min-h-8 items-center text-xs font-semibold text-primary underline" disabled={revealing} onClick={reveal}>
+          {revealing ? 'Decrypting…' : 'Show Aadhaar last 4 digits (logged)'}
+        </button>
+        {revealError && <p role="alert" className="text-xs font-semibold text-brick">{revealError}</p>}
+      </div>
     );
   }
   return last4 ? (

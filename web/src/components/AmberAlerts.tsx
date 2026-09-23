@@ -55,10 +55,10 @@ function AlertCard({ a }: { a: ChildAlert }) {
 
   return (
     <section role="alert" aria-label={`Missing child alert: ${who}`} className="overflow-hidden rounded-2xl border-2 border-red-600 bg-red-50 text-ink shadow-md">
-      <button type="button" onClick={toggle} className="flex w-full items-center gap-2 bg-red-600 px-4 py-2 text-left text-sm font-bold text-white">
-        <Siren size={18} className="shrink-0 animate-pulse" />
-        <span className="min-w-0 flex-1 truncate">{t('amber.missing')} · {who} · {a.last_seen_place}</span>
-        {collapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+      <button type="button" onClick={toggle} className="flex w-full items-start gap-2 bg-red-600 px-4 py-2 text-left text-sm font-bold text-white">
+        <Siren size={18} className="mt-0.5 shrink-0 animate-pulse" />
+        <span className="line-clamp-2 min-w-0 flex-1 py-0.5">{t('amber.missing')} · {who} · {a.last_seen_place}</span>
+        {collapsed ? <ChevronDown size={18} className="mt-0.5 shrink-0" /> : <ChevronUp size={18} className="mt-0.5 shrink-0" />}
       </button>
       {!collapsed && (
         <div className={`grid gap-4 p-4 ${photo ? 'sm:grid-cols-[8rem_minmax(0,1fr)]' : ''}`}>

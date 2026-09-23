@@ -71,6 +71,7 @@ export interface Comment {
   id: string;
   issue_id: string;
   author_id: string;
+  parent_id: string | null;
   body: string;
   created_at: string;
   hidden?: boolean;

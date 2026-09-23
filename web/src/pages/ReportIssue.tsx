@@ -171,6 +171,21 @@ export function ReportIssue() {
     aiSuggest.reset();
   }
 
+  // Ranks the nearby-reports list (public data the client already has: id + title) against this
+  // draft, so a reporter looking at several similar-sounding nearby reports does not have to read
+  // each one to see which, if any, is their exact problem. Never blocks submitting either way.
+  const dupeCheck = useMutation({
+    mutationFn: async () => {
+      await ensureSignedIn();
+      const candidates = matches.slice(0, 10).map((m) => ({ id: m.id, title: m.title }));
+      const { data, error } = await supabase.rpc('rank_similar_reports', { p_title: title.trim(), p_description: description.trim(), p_candidates: candidates });
+      if (error) throw new Error(error.message);
+      const r = data as { ok: boolean; match_id?: string | null; confidence?: string; reason?: string; error?: string };
+      if (!r.ok) throw new Error(r.error ?? 'Could not check for duplicates.');
+      return r;
+    },
+  });
+
   async function addPhotos(files: FileList | null) {
     if (!files) return;
     const room = MAX_PHOTOS - photos.length;
@@ -262,6 +277,8 @@ export function ReportIssue() {
   }
 
   const matches = nearby.data ?? [];
+  const likelyMatch = dupeCheck.data?.match_id ? matches.find((m) => m.id === dupeCheck.data!.match_id) ?? null : null;
+  useEffect(() => { dupeCheck.reset(); }, [nearby.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const descOk = (details.length > 0 ? 10 : 0) + description.trim().length >= 10;
 
   if (queued) {
@@ -406,9 +423,27 @@ export function ReportIssue() {
             {canInteract ? 'Backing an existing report adds weight to it and you will be notified when it changes.'
               : <>If it is the same problem, <Link to="/auth" state={{ from: '/report' }} className="font-semibold text-primary underline">sign in or create an account</Link> to back it instead of reporting again.</>}
           </p>
+
+          {matches.length > 1 && title.trim().length >= 5 && !dupeCheck.data && (
+            <button type="button" className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-xs font-semibold text-primary underline disabled:opacity-60"
+              disabled={dupeCheck.isPending} onClick={() => dupeCheck.mutate()}>
+              <Sparkles size={13} /> {dupeCheck.isPending ? 'Checking with AI…' : `Check if one of these ${matches.length} is my exact problem (AI)`}
+            </button>
+          )}
+          {dupeCheck.isError && <p className="mt-2 text-xs font-semibold text-brick">{friendlyError(dupeCheck.error.message)}</p>}
+          {dupeCheck.data && !likelyMatch && (
+            <p className="mt-2 text-xs text-muted">AI check: none of these look like the exact same problem — go ahead and report yours.</p>
+          )}
+          {likelyMatch && (
+            <div className="mt-2 rounded-lg border border-primary/30 bg-primary-soft p-2.5 text-xs">
+              <p className="flex items-center gap-1.5 font-bold text-primary"><Sparkles size={13} /> Likely the same problem ({dupeCheck.data!.confidence} confidence)</p>
+              {dupeCheck.data!.reason && <p className="mt-0.5 text-ink/80">{dupeCheck.data!.reason}</p>}
+            </div>
+          )}
+
           <ul className="mt-3 space-y-2">
             {matches.map((m) => (
-              <li key={m.id} className="flex items-center gap-3 rounded-lg bg-card p-2.5">
+              <li key={m.id} className={`flex items-center gap-3 rounded-lg bg-card p-2.5 ${likelyMatch?.id === m.id ? 'ring-2 ring-primary' : ''}`}>
                 <span className="min-w-0 flex-1">
                   <Link to={`/issues/${m.id}`} className="block truncate text-sm font-semibold hover:text-primary">{m.title}</Link>
                   <span className="block text-[11px] text-muted">{m.ref_no} · {STATUS_LABEL[m.status]} · {m.distance_m} m away · {m.upvote_count} backing</span>

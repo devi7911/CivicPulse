@@ -45,7 +45,10 @@ function SetupNeeded() {
 function Home() {
   const { isAdmin, loading } = useAuth();
   const [params] = useSearchParams();
-  if (!loading && isAdmin && params.get('view') !== 'public') return <Navigate to="/admin" replace />;
+  if (params.get('view') !== 'public') {
+    if (loading) return <Loading />;
+    if (isAdmin) return <Navigate to="/admin" replace />;
+  }
   return <Feed />;
 }
 

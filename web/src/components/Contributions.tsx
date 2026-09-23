@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, BadgeCheck, Camera, HandHeart, Hand, Leaf, PartyPopper, ShieldCheck, Sparkles, Trash2, Wrench } from 'lucide-react';
+import { Award, BadgeCheck, Camera, Grid3x3, HandHeart, Hand, Leaf, PartyPopper, Rows3, ShieldCheck, Sparkles, Trash2, Wrench } from 'lucide-react';
 import { FlagButton, HideToggle } from './Moderation';
+import { Avatar } from './Avatar';
 import { useAuth } from '../hooks/useAuth';
 import { isOrg, type AccountType } from '../lib/accounts';
 import { OrgChip } from './OrgChip';
@@ -28,10 +29,17 @@ interface Contribution {
 }
 
 // Community contribution tab: what verified people and organisations did for the city.
+const VIEW_KEY = 'contributions-view';
+type ContribView = 'grid' | 'list';
+
 export function ContributionsFeed() {
   const { userId, isGuest, isAdmin, profile } = useAuth();
   const qc = useQueryClient();
   const canApplaud = Boolean(userId) && !isGuest;
+  const [view, setView] = useState<ContribView>(() => {
+    try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
+  });
+  function setViewPersist(v: ContribView) { setView(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* private mode */ } }
 
   const list = useQuery({
     queryKey: ['contributions'],
@@ -67,6 +75,9 @@ export function ContributionsFeed() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['contributions'] }),
   });
 
+  const items = list.data ?? [];
+  const cardProps = { canApplaud, userId, isAdmin, applauded: mine.data, onApplaud: (id: string) => applaud.mutate(id), applaudPending: applaud.isPending, onDelete: (id: string) => remove.mutate(id) };
+
   return (
     <div className="space-y-4">
       <Composer />
@@ -77,61 +88,133 @@ export function ContributionsFeed() {
           <p className="mt-1 text-sm text-muted">Clean-ups, volunteering and fixes by verified residents and organisations appear here.</p>
         </div>
       )}
-      <ul className="space-y-4">
-        {(list.data ?? []).map((c) => {
-          const K = KINDS[c.kind];
-          const a = c.author;
-          const img = photoUrl(c.photo_path);
-          const applauded = mine.data?.has(c.id);
-          return (
-            <li key={c.id} className="card overflow-hidden">
-              <div className="flex items-center gap-3 px-4 pt-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary"><K.icon size={18} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-bold">
-                    <span className="truncate">{a && isOrg(a.account_type) && a.org_name ? a.org_name : a?.display_name ?? 'Member'}</span>
-                    {a?.verified && <BadgeCheck size={15} className="shrink-0 fill-primary text-white" aria-label="Verified" />}
-                    <OrgChip type={a?.account_type} verified={a?.verified} />
-                  </p>
-                  <p className="truncate text-xs text-muted">
-                    {a && isOrg(a.account_type) ? `Posted by ${a.display_name} · ` : ''}{K.label} · {timeAgo(c.created_at)}
-                  </p>
-                </div>
-                {c.hidden && <span className="pill-overdue">Hidden</span>}
-              </div>
-              <div className="space-y-2 px-4 py-3">
-                <h3 className="text-base font-bold">{c.title}</h3>
-                <p className="text-sm whitespace-pre-wrap text-ink/85">{c.body}</p>
-              </div>
-              {img && <img src={img} alt="" loading="lazy" className="max-h-96 w-full object-cover" />}
-              {creditsFor(c.photo_path).map((cr) => (
-                <p key={cr.source} className="px-4 pt-1 text-[10px] text-muted">
-                  Photo: <a href={cr.source} target="_blank" rel="noopener noreferrer" className="underline">{cr.author}</a>, <a href={cr.licenseUrl} target="_blank" rel="noopener noreferrer" className="underline">{cr.license}</a>, via Wikimedia Commons.
-                </p>
-              ))}
-              <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
-                <button type="button" disabled={!canApplaud || c.author_id === userId || applaud.isPending} aria-pressed={Boolean(applauded)}
-                  onClick={() => applaud.mutate(c.id)} title={!canApplaud ? 'Sign in to applaud' : c.author_id === userId ? 'You cannot applaud your own post' : undefined}
-                  className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition ${applauded ? 'bg-primary text-white' : 'text-ink hover:bg-primary-soft'} disabled:opacity-60`}>
-                  <Hand size={16} /> {applauded ? 'Applauded' : 'Applaud'} · {c.applause_count}
-                </button>
-                <span className="ms-auto flex items-center gap-1">
-                  {canApplaud && c.author_id !== userId && <FlagButton type="contribution" id={c.id} userId={userId!} compact />}
-                  {isAdmin && <HideToggle type="contribution" id={c.id} hidden={c.hidden} />}
-                  {(c.author_id === userId || isAdmin) && (
-                    <button type="button" className="inline-flex min-h-8 items-center gap-1 px-1 text-[11px] font-semibold text-muted hover:text-brick"
-                      onClick={() => { if (confirm('Delete this post?')) remove.mutate(c.id); }}><Trash2 size={12} /> Delete</button>
-                  )}
-                </span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      {items.length > 0 && (
+        <div className="flex justify-end">
+          <div role="group" aria-label="Choose layout" className="flex rounded-lg border border-line bg-card p-0.5">
+            {([['grid', 'Grid', Grid3x3], ['list', 'List', Rows3]] as const).map(([mode, label, Icon]) => (
+              <button key={mode} type="button" aria-pressed={view === mode} onClick={() => setViewPersist(mode)}
+                className={`flex min-h-9 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition ${view === mode ? 'bg-primary text-white' : 'text-muted hover:text-ink'}`}>
+                <Icon size={15} /> {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {view === 'grid' ? (
+        <div className="grid grid-cols-2 gap-1.5 sm:gap-2.5 md:grid-cols-3 2xl:grid-cols-4">
+          {items.map((c) => <ContributionTile key={c.id} c={c} {...cardProps} />)}
+        </div>
+      ) : (
+        <ul className="space-y-4">
+          {items.map((c) => <ContributionCard key={c.id} c={c} {...cardProps} />)}
+        </ul>
+      )}
       {!profile?.verified && (
         <p className="text-center text-xs text-muted">Only verified residents and organisations can share here, with limits, so this stays about the community rather than self-promotion.</p>
       )}
     </div>
+  );
+}
+
+interface CardProps {
+  c: Contribution; canApplaud: boolean; userId: string | null; isAdmin: boolean;
+  applauded: Set<string> | undefined; onApplaud: (id: string) => void; applaudPending: boolean; onDelete: (id: string) => void;
+}
+
+// Mirrors IssueCard's layout (avatar row on top, photo as a side panel on desktop / full-width
+// banner on mobile, content below) so the two feed tabs read as one consistent design language.
+function ContributionCard({ c, canApplaud, userId, isAdmin, applauded, onApplaud, applaudPending, onDelete }: CardProps) {
+  const K = KINDS[c.kind];
+  const a = c.author;
+  const name = a && isOrg(a.account_type) && a.org_name ? a.org_name : a?.display_name ?? 'Member';
+  const img = photoUrl(c.photo_path);
+  const applaudedByMe = applauded?.has(c.id);
+  return (
+    <li className={`card group relative grid grid-cols-[minmax(0,1fr)] overflow-hidden transition-shadow hover:shadow-lg ${img ? 'md:grid-cols-[17rem_minmax(0,1fr)] md:grid-rows-[auto_1fr] lg:grid-cols-[20rem_minmax(0,1fr)]' : ''}`}>
+      <div className={`flex items-center gap-3 px-4 py-2.5 ${img ? 'md:col-start-2 md:row-start-1' : ''}`}>
+        <Avatar name={name} path={a?.avatar_path} size={38} />
+        <div className="min-w-0 flex-1">
+          <p className="flex min-w-0 flex-wrap items-center gap-1 text-sm font-bold">
+            <span className="truncate">{name}</span>
+            {a?.verified && <BadgeCheck size={15} className="shrink-0 fill-primary text-white" aria-label="Verified" />}
+            <OrgChip type={a?.account_type} verified={a?.verified} />
+          </p>
+          <p className="truncate text-xs text-muted">
+            {a && isOrg(a.account_type) ? `Posted by ${a.display_name} · ` : ''}{K.label}
+          </p>
+        </div>
+        {c.hidden && <span className="pill-overdue shrink-0">Hidden</span>}
+      </div>
+
+      {img && (
+        <div className="relative aspect-[16/10] overflow-hidden bg-sand md:col-start-1 md:row-span-2 md:row-start-1 md:aspect-auto md:min-h-44">
+          <img src={img} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+        </div>
+      )}
+
+      <div className={`flex flex-1 flex-col gap-1.5 px-4 pb-3 ${img ? 'pt-3 md:col-start-2 md:row-start-2 md:border-t md:border-line' : 'border-t border-line pt-3'}`}>
+        <div className="flex gap-3">
+          {!img && (
+            <span aria-hidden className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary"><K.icon size={20} strokeWidth={1.9} /></span>
+          )}
+          <div className="min-w-0">
+            <h3 className="text-[15px] leading-snug font-bold">{c.title}</h3>
+            <p className={`mt-1 text-sm leading-relaxed text-muted whitespace-pre-wrap ${img ? 'line-clamp-2 md:line-clamp-3' : 'line-clamp-3'}`}>{c.body}</p>
+          </div>
+        </div>
+        {creditsFor(c.photo_path).map((cr) => (
+          <p key={cr.source} className="text-[10px] text-muted">
+            Photo: <a href={cr.source} target="_blank" rel="noopener noreferrer" className="underline">{cr.author}</a>, <a href={cr.licenseUrl} target="_blank" rel="noopener noreferrer" className="underline">{cr.license}</a>, via Wikimedia Commons.
+          </p>
+        ))}
+        <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1.5 pt-2 text-sm font-semibold text-ink">
+          <button type="button" disabled={!canApplaud || c.author_id === userId || applaudPending} aria-pressed={Boolean(applaudedByMe)}
+            onClick={() => onApplaud(c.id)} title={!canApplaud ? 'Sign in to applaud' : c.author_id === userId ? 'You cannot applaud your own post' : undefined}
+            className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition ${applaudedByMe ? 'bg-primary text-white' : 'text-ink hover:bg-primary-soft'} disabled:opacity-60`}>
+            <Hand size={16} /> {applaudedByMe ? 'Applauded' : 'Applaud'} · {c.applause_count}
+          </button>
+          {canApplaud && c.author_id !== userId && <FlagButton type="contribution" id={c.id} userId={userId!} compact />}
+          {isAdmin && <HideToggle type="contribution" id={c.id} hidden={c.hidden} />}
+          {(c.author_id === userId || isAdmin) && (
+            <button type="button" className="inline-flex min-h-8 items-center gap-1 px-1 text-[11px] font-semibold text-muted hover:text-brick"
+              onClick={() => { if (confirm('Delete this post?')) onDelete(c.id); }}><Trash2 size={12} /> Delete</button>
+          )}
+          <span className="text-xs font-medium text-muted">{timeAgo(c.created_at)}</span>
+          <span className="ml-auto"><span className="tag">{K.label}</span></span>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+// Grid tile: photo-first, condensed caption. There is no contribution detail page, so unlike
+// report tiles this is not a link — the applaud button is the only interactive element.
+function ContributionTile({ c, canApplaud, userId, applauded, onApplaud, applaudPending }: CardProps) {
+  const K = KINDS[c.kind];
+  const a = c.author;
+  const img = photoUrl(c.photo_path);
+  const applaudedByMe = applauded?.has(c.id);
+  return (
+    <article className="flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-hard-sm">
+      <div className="relative aspect-square overflow-hidden bg-sand">
+        {img ? (
+          <img src={img} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center bg-primary-soft text-primary"><K.icon size={40} strokeWidth={1.6} /></span>
+        )}
+        {c.hidden && <span className="pill-overdue absolute top-1.5 left-1.5">Hidden</span>}
+      </div>
+      <div className="px-2.5 pt-2 pb-2.5 sm:px-3">
+        <p className="flex items-center gap-1 text-[11px] font-semibold text-muted"><K.icon size={12} /> {K.label}</p>
+        <p className="mt-1 line-clamp-2 min-h-[2.2rem] text-[13px] leading-snug font-bold">{c.title}</p>
+        <p className="mt-1 truncate text-[11px] text-muted">{a && isOrg(a.account_type) && a.org_name ? a.org_name : a?.display_name ?? 'Member'}</p>
+        <button type="button" disabled={!canApplaud || c.author_id === userId || applaudPending} aria-pressed={Boolean(applaudedByMe)}
+          onClick={() => onApplaud(c.id)} title={!canApplaud ? 'Sign in to applaud' : c.author_id === userId ? 'You cannot applaud your own post' : undefined}
+          className={`mt-1.5 inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition ${applaudedByMe ? 'bg-primary text-white' : 'bg-sand text-ink hover:bg-primary-soft'} disabled:opacity-60`}>
+          <Hand size={13} /> {c.applause_count}
+        </button>
+      </div>
+    </article>
   );
 }
 

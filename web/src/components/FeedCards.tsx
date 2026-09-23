@@ -29,6 +29,7 @@ export function IssueCard({ issue }: { issue: Issue }) {
         <span className="flex shrink-0 flex-col items-end gap-1">
           <span className={`whitespace-nowrap ${STATUS_CLASS[issue.status]}`}>{STATUS_LABEL[issue.status]}</span>
           {isOverdue(issue) && <span className="pill-overdue">Overdue</span>}
+          {issue.reopen_count > 0 && issue.status !== 'resolved' && <span className="pill-overdue whitespace-nowrap">Disputed fix · reopened ×{issue.reopen_count}</span>}
         </span>
       </div>
 

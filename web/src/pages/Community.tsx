@@ -31,7 +31,7 @@ export function Community() {
         <section className="card space-y-3 p-4">
           <h2 className="flex items-center gap-2 text-lg font-semibold"><Target size={18} /> Missions</h2>
           {missions.isLoading ? <p className="text-sm text-muted">Loading…</p> : <MissionList missions={missions.data ?? []} />}
-          {(!userId || isGuest) && <p className="text-xs text-muted"><Link to="/auth" className="font-semibold text-primary underline">Create an account</Link> to track mission progress and earn points.</p>}
+          {(!userId || isGuest) && <p className="text-xs text-muted"><Link to="/auth" state={{ mode: 'signup' }} className="font-semibold text-primary underline">Create an account</Link> to track mission progress and earn points.</p>}
         </section>
         <section className="card space-y-3 p-4">
           <h2 className="flex items-center gap-2 text-lg font-semibold"><Medal size={18} /> Top helpers this month</h2>

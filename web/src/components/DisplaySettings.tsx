@@ -8,6 +8,7 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
   const [theme, setTheme] = useState<ThemeChoice>(getThemeChoice);
   function pick(c: ThemeChoice) { setTheme(c); setThemeChoice(c); }
   const themes: [ThemeChoice, string, typeof Sun][] = [['system', t('theme.system'), Monitor], ['light', t('theme.light'), Sun], ['dark', t('theme.dark'), Moon]];
+  const index = themes.findIndex(([c]) => c === theme);
 
   return (
     <div className={`space-y-2 ${compact ? '' : 'text-xs'}`}>
@@ -18,10 +19,13 @@ export function DisplaySettings({ compact = false }: { compact?: boolean }) {
           {(Object.keys(LANGS) as Lang[]).map((l) => <option key={l} value={l}>{LANGS[l]}</option>)}
         </select>
       </label>
-      <div role="radiogroup" aria-label={t('settings.theme')} className="grid grid-cols-3 gap-1 rounded-lg bg-sand p-1">
+      {/* One sliding toggle, not three separate buttons: a thumb moves behind whichever option is active. */}
+      <div role="radiogroup" aria-label={t('settings.theme')} className="relative grid grid-cols-3 rounded-full bg-sand p-1">
+        <span aria-hidden className="absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-full bg-card shadow-sm transition-transform duration-200 ease-out"
+          style={{ transform: `translateX(${index * 100}%)` }} />
         {themes.map(([c, label, Icon]) => (
           <button key={c} type="button" role="radio" aria-checked={theme === c} onClick={() => pick(c)}
-            className={`flex min-h-8 items-center justify-center gap-1 rounded-md text-[11px] font-semibold ${theme === c ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>
+            className={`relative z-10 flex min-h-8 items-center justify-center gap-1 rounded-full text-[11px] font-semibold transition-colors ${theme === c ? 'text-primary' : 'text-muted'}`}>
             <Icon size={13} /> {label}
           </button>
         ))}

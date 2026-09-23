@@ -1,5 +1,6 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
+import { Mail, MailCheck } from 'lucide-react';
 import { Captcha, captchaEnabled, getCaptchaToken } from '../components/Captcha';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
@@ -11,7 +12,11 @@ const GOOGLE_ENABLED = import.meta.env.VITE_AUTH_GOOGLE === 'true';
 export function Auth() {
   const { userId, isGuest } = useAuth();
   const location = useLocation();
-  const [mode, setMode] = useState<'signin' | 'signup'>(isGuest ? 'signup' : 'signin');
+  // Default to Sign in, whatever the visitor's guest status — a "Sign in" link should not land on
+  // Create account just because they happen to have an anonymous session. Only links that
+  // specifically say "Create an account" pass state to open on that tab instead.
+  const modeFromState = (location.state as { mode?: 'signin' | 'signup' } | null)?.mode;
+  const [mode, setMode] = useState<'signin' | 'signup'>(modeFromState ?? 'signin');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -23,11 +28,42 @@ export function Auth() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Set once sign-up succeeds and needs an email confirmation; replaces the whole form so there is
+  // nothing left to edit or re-submit while the person goes to check their inbox.
+  const [confirming, setConfirming] = useState<{ email: string; guestUpgrade: boolean } | null>(null);
+  const [resent, setResent] = useState(false);
   const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaOk, setCaptchaOk] = useState(false);
   const onCaptcha = useCallback((t: string | null) => setCaptchaOk(Boolean(t)), []);
 
   if (userId && !isGuest) return <Navigate to={(location.state as { from?: string } | null)?.from ?? '/'} replace />;
+
+  if (confirming) {
+    return (
+      <div className="stagger card mx-auto max-w-md space-y-4 p-6 text-center sm:p-8">
+        <Mail size={40} className="mx-auto text-primary" />
+        <div>
+          <h1 className="page-title">Check your email</h1>
+          <p className="mt-2 text-sm text-muted">
+            We sent a confirmation link to <span className="font-semibold text-ink">{confirming.email}</span>.
+            {confirming.guestUpgrade
+              ? ' Open it, then come back here and set a password in your Profile. The reports you tracked on this device will stay with you.'
+              : ' Open it on this device, then come back here and sign in.'}
+          </p>
+        </div>
+        <p className="text-xs text-muted">Not there yet? Check your spam folder, or the address for a typo.</p>
+        {error && <p role="alert" className="text-sm text-danger">{friendlyError(error)}</p>}
+        {resent ? (
+          <p role="status" className="flex items-center justify-center gap-1.5 text-sm font-semibold text-ok"><MailCheck size={16} /> Sent again.</p>
+        ) : (
+          <button type="button" className="btn btn-ghost w-full" disabled={busy} onClick={resendConfirmation}>{busy ? 'Sending…' : 'Send the link again'}</button>
+        )}
+        <button type="button" className="btn btn-primary w-full" onClick={() => { setConfirming(null); setResent(false); setMode('signin'); }}>
+          Back to sign in
+        </button>
+      </div>
+    );
+  }
 
   // Google sign-in: the client ID and secret live only in Supabase > Authentication > Providers > Google.
   async function google() {
@@ -53,6 +89,18 @@ export function Auth() {
     else setNotice('If an account exists for that email, a reset link is on its way.');
   }
 
+  async function resendConfirmation() {
+    if (!confirming) return;
+    setError(null);
+    setBusy(true);
+    const { error } = confirming.guestUpgrade
+      ? await supabase.auth.resend({ type: 'email_change', email: confirming.email })
+      : await supabase.auth.resend({ type: 'signup', email: confirming.email });
+    setBusy(false);
+    if (error) setError(error.message);
+    else setResent(true);
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -75,7 +123,7 @@ export function Auth() {
         { emailRedirectTo: `${window.location.origin}/profile` },
       );
       if (error) setError(error.message.toLowerCase().includes('already') ? 'That email already has an account. Use Sign in instead.' : error.message);
-      else setNotice(`Check ${email.trim()} for a confirmation link. After confirming, set your password in Profile. Your tracked reports stay with you.`);
+      else setConfirming({ email: email.trim(), guestUpgrade: true });
     } else if (mode === 'signup') {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
@@ -83,7 +131,7 @@ export function Auth() {
         options: { data: profileData, emailRedirectTo: window.location.origin, captchaToken: getCaptchaToken() ?? undefined },
       });
       if (error) setError(error.message);
-      else if (!data.session) setNotice('Check your email for a confirmation link, then sign in.');
+      else if (!data.session) setConfirming({ email: email.trim(), guestUpgrade: false });
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password, options: { captchaToken: getCaptchaToken() ?? undefined } });
       if (error) setError(error.message.toLowerCase().includes('captcha') ? 'The security check expired. Please try again.' : 'Incorrect email or password.');

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
@@ -70,7 +70,7 @@ export function ModerationAdmin() {
               {g.type === 'issue' && <Link to={`/issues/${g.id}`} className="text-xs font-semibold text-primary underline">Open post</Link>}
               {g.type === 'proposal' && <Link to="/petitions" className="text-xs font-semibold text-primary underline">Open petitions</Link>}
               <HideToggle type={g.type} id={g.id} hidden={false} />
-              <button type="button" className="min-h-8 px-1 text-[11px] font-semibold text-muted hover:text-ink" onClick={() => dismiss.mutate({ type: g.type, id: g.id })}>Dismiss, keep visible</button>
+              <button type="button" className="min-h-8 px-1 text-[11px] font-semibold text-muted hover:text-ink" onClick={() => { if (confirm('Dismiss these flags and keep the content visible?')) dismiss.mutate({ type: g.type, id: g.id }); }}>Dismiss, keep visible</button>
             </div>
           </li>
         ))}
@@ -80,21 +80,26 @@ export function ModerationAdmin() {
 }
 
 /* ---------------- People ---------------- */
-interface AdminUser { id: string; display_name: string; email: string | null; role: 'citizen' | 'admin'; banned: boolean; verified: boolean; points: number; reports: number; is_guest: boolean; created_at: string; account_type: AccountType; org_name: string | null }
+interface AdminUser { id: string; display_name: string; email: string | null; role: 'citizen' | 'admin'; banned: boolean; verified: boolean; points: number; reports: number; is_guest: boolean; created_at: string; account_type: AccountType; org_name: string | null; total_count: number }
+const PEOPLE_PAGE_SIZE = 50;
 
 export function PeopleAdmin({ userId }: { userId: string }) {
   const qc = useQueryClient();
   const [q, setQ] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const [msg, setMsg] = useState<Msg>(null);
   const users = useQuery({
-    queryKey: ['admin-users', search],
+    queryKey: ['admin-users', search, page],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('admin_list_users', { p_query: search || null });
+      const { data, error } = await supabase.rpc('admin_list_users', { p_query: search || null, p_offset: page * PEOPLE_PAGE_SIZE, p_limit: PEOPLE_PAGE_SIZE });
       if (error) throw new Error(error.message);
       return data as AdminUser[];
     },
   });
+  const total = users.data?.[0]?.total_count ?? 0;
+  const from = total === 0 ? 0 : page * PEOPLE_PAGE_SIZE + 1;
+  const to = Math.min(total, (page + 1) * PEOPLE_PAGE_SIZE);
   const set = useMutation({
     mutationFn: async (p: { id: string; role?: 'citizen' | 'admin'; banned?: boolean }) => {
       const { error } = await supabase.rpc('admin_set_user', { p_user: p.id, p_role: p.role ?? null, p_banned: p.banned ?? null });
@@ -123,7 +128,7 @@ export function PeopleAdmin({ userId }: { userId: string }) {
 
   return (
     <section className="space-y-3">
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); setSearch(q.trim().slice(0, 60)); }}>
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); setPage(0); setSearch(q.trim().slice(0, 60)); }}>
         <input className="input" placeholder="Search name, email or organisation" aria-label="Search people" value={q} onChange={(e) => setQ(e.target.value)} />
         <button type="submit" className="btn btn-ghost">Search</button>
       </form>
@@ -165,7 +170,13 @@ export function PeopleAdmin({ userId }: { userId: string }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-muted">Shows the 50 newest matches. Every change here is recorded in Activity.</p>
+      <div className="flex items-center justify-between text-[11px] text-muted">
+        <p>{total > 0 ? `Showing ${from}–${to} of ${total}` : 'No matches.'} · every change here is recorded in Activity.</p>
+        <div className="flex items-center gap-2">
+          <button type="button" className="btn btn-ghost min-h-8 px-3 text-xs" disabled={page === 0 || users.isFetching} onClick={() => setPage((p) => Math.max(0, p - 1))}>Previous</button>
+          <button type="button" className="btn btn-ghost min-h-8 px-3 text-xs" disabled={to >= total || users.isFetching} onClick={() => setPage((p) => p + 1)}>Next</button>
+        </div>
+      </div>
     </section>
   );
 }
@@ -499,7 +510,7 @@ export function AdsAdmin() {
               {a && (
                 <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
                   {a.name} ({a.kind}) · {a.contact_email}{a.website ? ` · ${a.website}` : ''}
-                  <button type="button" className="font-semibold text-primary underline" onClick={() => verify.mutate({ id: a.id, v: !a.verified })}>{a.verified ? 'Remove verified' : 'Mark verified'}</button>
+                  <button type="button" className="font-semibold text-primary underline" onClick={() => { if (!a.verified || confirm(`Remove ${a.name}'s verified badge?`)) verify.mutate({ id: a.id, v: !a.verified }); }}>{a.verified ? 'Remove verified' : 'Mark verified'}</button>
                 </p>
               )}
               <p className="text-xs text-muted">Link: {c.cta_url} · {new Date(c.starts_at).toLocaleDateString('en-IN')} to {new Date(c.ends_at).toLocaleDateString('en-IN')}{c.target_category ? ` · next to ${ISSUE_CATEGORIES[c.target_category]}` : ''}</p>
@@ -672,6 +683,7 @@ export function BusRoutesAdmin() {
   const [areaQ, setAreaQ] = useState('');
   const [found, setFound] = useState<Stop[]>([]);
   const [searching, setSearching] = useState(false);
+  const searchAbort = useRef<AbortController | null>(null);
 
   const routes = useQuery({
     queryKey: ['admin-bus-routes'],
@@ -683,15 +695,23 @@ export function BusRoutesAdmin() {
   });
 
   async function findStops(e: FormEvent) {
-    e.preventDefault(); setSearching(true); setMsg(null);
+    e.preventDefault();
+    searchAbort.current?.abort();
+    const ctrl = new AbortController();
+    searchAbort.current = ctrl;
+    setSearching(true); setMsg(null);
     try {
-      const places = await geocode(areaQ.trim(), new AbortController().signal);
+      const places = await geocode(areaQ.trim(), ctrl.signal);
+      if (ctrl.signal.aborted) return;
       if (!places.length) { setFound([]); setMsg({ ok: false, text: 'Area not found. Try a landmark.' }); return; }
       const res = await busesNear(places[0].lat, places[0].lng, 900);
+      if (ctrl.signal.aborted) return;
       setFound(res.stops);
       if (!res.stops.length) setMsg({ ok: false, text: 'No mapped stops there. Try a main road nearby.' });
-    } catch (err) { setMsg({ ok: false, text: (err as Error).message }); }
-    finally { setSearching(false); }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      setMsg({ ok: false, text: (err as Error).message });
+    } finally { if (!ctrl.signal.aborted) setSearching(false); }
   }
 
   async function edit(r: BusRouteRow) {
