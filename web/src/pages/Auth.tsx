@@ -2,6 +2,7 @@ import { useCallback, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Mail, MailCheck } from 'lucide-react';
 import { Captcha, captchaEnabled, getCaptchaToken } from '../components/Captcha';
+import { AddressFields, useAddressFields } from '../components/AddressFields';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { ACCOUNT_TYPES, isOrg, validIndianMobile, type AccountType } from '../lib/accounts';
@@ -19,7 +20,7 @@ export function Auth() {
   const [mode, setMode] = useState<'signin' | 'signup'>(modeFromState ?? 'signin');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const addr = useAddressFields();
   const [accountType, setAccountType] = useState<AccountType>('individual');
   const [orgName, setOrgName] = useState('');
   const [email, setEmail] = useState('');
@@ -107,13 +108,13 @@ export function Auth() {
     setNotice(null);
     if (mode === 'signup') {
       if (!validIndianMobile(phone)) { setError('Please enter a valid 10-digit Indian mobile number.'); return; }
-      if (address.trim().length < 10) { setError('Please enter your full address (at least 10 characters).'); return; }
+      if (!addr.valid()) { setError('Please fill in at least the street, area and city, and a 6-digit PIN code if given.'); return; }
       if (isOrg(accountType) && orgName.trim().length < 2) { setError(`Please enter the ${ACCOUNT_TYPES[accountType].orgLabel?.toLowerCase()}.`); return; }
     }
     setBusy(true);
     // Stored privately by the database when the account is created (phone and address are never public).
     const profileData = {
-      display_name: name.trim(), phone: phone.trim(), address: address.trim(), account_type: accountType,
+      display_name: name.trim(), phone: phone.trim(), address: addr.address, account_type: accountType,
       org_name: isOrg(accountType) ? orgName.trim() : null,
     };
     if (mode === 'signup' && isGuest) {
@@ -197,7 +198,7 @@ export function Auth() {
             )}
             <div><label className="label" htmlFor="name">{isOrg(accountType) ? 'Contact person name' : 'Your name'}</label><input id="name" className="input" required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} /></div>
             <div><label className="label" htmlFor="phone">Mobile number</label><input id="phone" className="input" type="tel" inputMode="tel" required autoComplete="tel" placeholder="98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
-            <div><label className="label" htmlFor="address">{isOrg(accountType) ? 'Office address' : 'Address'}</label><textarea id="address" className="input" rows={2} required minLength={10} maxLength={300} autoComplete="street-address" placeholder="House / flat, street, area, city, PIN" value={address} onChange={(e) => setAddress(e.target.value)} /></div>
+            <AddressFields idPrefix="su" label={isOrg(accountType) ? 'Office address' : 'Address'} state={addr} />
           </>
         )}
         <div><label className="label" htmlFor="email">Email</label><input id="email" className="input" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
